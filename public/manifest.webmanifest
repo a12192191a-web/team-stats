@@ -1,0 +1,13 @@
+{
+  "name": "RS Baseball Manager",
+  "short_name": "RS Baseball",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08213A",
+  "theme_color": "#08213A",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
