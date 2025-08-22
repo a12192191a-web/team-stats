@@ -935,40 +935,59 @@ async function saveToCloud() {
                         </tr>
                       </tbody>
                     </table>
-
-                    {/* 投手（新增 AB、PC；僅 P 顯示） */}
-                    {info.positions.includes("P") && (
-                      <table className="border text-sm mb-2 w-full">
-                        <thead>
-                          <tr>
-                            {Object.keys(initPitching()).map((k) => (
-                              <th key={k} className="border px-2 py-1">{k}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            {Object.keys(initPitching()).map((stat) => (
-                              <td key={stat} className="border px-2 py-1 text-center">
-                                {readOnly ? (
-                                  toNonNegNum((cur.pitching as any)[stat])
-                                ) : (
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    className="w-16 border rounded px-1 py-0.5 text-right"
-                                    value={toNonNegNum((cur.pitching as any)[stat])}
-                                    onChange={(e) =>
-                                      updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
-                                    }
-                                  />
-                                )}
-                              </td>
-                            ))}
-                          </tr>
-                        </tbody>
-                      </table>
-                    )}
+                   {/* 投手（新增 AB、PC；僅 P 顯示） */}
+{info.positions.includes("P") && (
+  <table className="border text-sm mb-2 w-full">
+    <thead>
+      <tr>
+        {Object.keys(initPitching()).map((k) => (
+          <th key={k} className="border px-2 py-1">{k}</th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        {Object.keys(initPitching()).map((stat) => (
+          <td key={stat} className="border px-2 py-1 text-center">
+            {readOnly ? (
+              // 唯讀：IP 顯示一位小數，其它照原樣
+              stat === "IP"
+                ? normalizeIP(toNonNegNum((cur.pitching as any)[stat])).toFixed(1)
+                : toNonNegNum((cur.pitching as any)[stat])
+            ) : stat === "IP" ? (
+              // 可編輯：IP 用「每按一下 +⅓；右鍵 −⅓」的按鈕
+              <button
+                type="button"
+                className="px-2 py-1 border rounded w-16 text-right"
+                title="點一下 +⅓ 局；右鍵 −⅓ 局"
+                onClick={() =>
+                  updateGameStat(g.id, pid, "pitching", "IP", stepIP(cur.pitching.IP, 1))
+                }
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  updateGameStat(g.id, pid, "pitching", "IP", stepIP(cur.pitching.IP, -1));
+                }}
+              >
+                {normalizeIP(cur.pitching.IP).toFixed(1)}
+              </button>
+            ) : (
+              // 其它投手欄位維持 input
+              <input
+                type="number"
+                min={0}
+                className="w-16 border rounded px-1 py-0.5 text-right"
+                value={toNonNegNum((cur.pitching as any)[stat])}
+                onChange={(e) =>
+                  updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
+                }
+              />
+            )}
+          </td>
+        ))}
+      </tr>
+    </tbody>
+  </table>
+)}
 
                     {/* 跑壘（SB、CS） */}
                     <table className="border text-sm mb-2 w-full">
