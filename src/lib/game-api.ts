@@ -116,7 +116,7 @@ export function useCloudGame(gameId: string) {
         return [...others, newRow];
       });
     });
-    return off;
+    return () => { if (typeof off === 'function') { void off(); } };
   }, [gameId]);
 
   return { rows, loading };
