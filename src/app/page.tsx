@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer,
@@ -38,8 +38,8 @@ const initBatting = () => ({
   SH: 0, // 犧牲觸擊
   GO: 0,
   FO: 0,
-  R: 0, // 得分
-  RBI: 0, // 打點
+  R: 0,  // 得分
+  RBI: 0 // 打點
 });
 
 const initPitching = () => ({
@@ -66,7 +66,7 @@ type Fielding = ReturnType<typeof initFielding>;
 type Baserun = ReturnType<typeof initBaserun>;
 
 type Player = {
-  id: number;
+  id: string; // ✅ 改用 UUID
   name: string;
   positions: string[];
   throws: "R" | "L" | "S";
@@ -84,15 +84,15 @@ type Triple = {
   baserunning: Baserun;
 };
 
-type RosterSnapshot = Record<number, { name: string; positions: string[] }>;
+type RosterSnapshot = Record<string, { name: string; positions: string[] }>;
 
 type Game = {
-  id: number;
+  id: string; // ✅ 改用 UUID
   date: string;
   opponent: string;
-  lineup: number[];
+  lineup: string[]; // ✅ 以字串 id
   innings: number[];
-  stats: Record<number, Triple>;
+  stats: Record<string, Triple>; // ✅ key = string id
   locked: boolean;
   roster: RosterSnapshot; // 鎖定時的球員姓名/守位快照
 };
@@ -105,50 +105,20 @@ const HANDS: Array<"R" | "L" | "S"> = ["R", "L", "S"];
 
 // localStorage key（加上版本避免舊資料結構衝突）
 const STORAGE = {
-  players: "rsbm.players.v2",
-  games: "rsbm.games.v2",
-  compare: "rsbm.compare.v1",
+  players: "rsbm.players.v3", // ⬆ bumped
+  games: "rsbm.games.v3",
+  compare: "rsbm.compare.v2",
 };
-// --- Innings 轉換：支援 6.1 / 6.2 記法 ---
-function ipToInnings(ipRaw: any) {
-  const ip = Number(ipRaw) || 0;
-  const whole = Math.trunc(ip);
-  const frac = Number((ip - whole).toFixed(1)); // 只取到十分位避免 0.1000003 類誤差
-  let add = 0;
-  if (Math.abs(frac - 0.1) < 1e-9) add = 1 / 3;      // 0.1 => 1/3
-  else if (Math.abs(frac - 0.2) < 1e-9) add = 2 / 3; // 0.2 => 2/3
-  else if (Math.abs(frac) < 1e-9) add = 0;           // 0.0
-  else add = frac; // 萬一舊資料真的存了 0.33 這類小數，盡量照字面用
-  return whole + add;
-}
-function normalizeIP(v: number) {
-  const w = Math.trunc(Number(v) || 0);
-  const f = Math.round(((Number(v) || 0) - w) * 10);
-  const legal = f <= 0 ? 0 : f <= 1 ? 1 : 2;
-  return w + legal / 10;
-}
 
-// .0 → .1 → .2 → 下一整局；dir=-1 為 -1/3 局
-function stepIP(ip: number, dir: 1 | -1 = 1) {
-  let w = Math.trunc(Number(ip) || 0);
-  let f = Math.round(((Number(ip) || 0) - w) * 10); // 0/1/2
-  if (dir === 1) { if (f === 0) f = 1; else if (f === 1) f = 2; else { w += 1; f = 0; } }
-  else { if (f === 0) { w = Math.max(0, w - 1); f = 2; } else if (f === 1) f = 0; else f = 1; }
-  return Math.max(0, w + f / 10);
-}
+const CLOUD_ROW_ID = "default";
 
-const emptyTriple = (): Triple => ({
-  batting: initBatting(),
-  pitching: initPitching(),
-  fielding: initFielding(),
-  baserunning: initBaserun(),
-});
-
+/** 除錯用：保底轉數字且非負 */
 const toNonNegNum = (v: any) => {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
 
+/** JSON.parse 安全包裝 */
 function safeParse<T>(text: string | null, fallback: T): T {
   if (!text) return fallback;
   try {
@@ -158,6 +128,45 @@ function safeParse<T>(text: string | null, fallback: T): T {
   }
 }
 
+/** ⅓局轉換：支援 6.1 / 6.2 記法 */
+function ipToInnings(ipRaw: any) {
+  const ip = Number(ipRaw) || 0;
+  const whole = Math.trunc(ip);
+  const frac = Number((ip - whole).toFixed(1));
+  let add = 0;
+  if (Math.abs(frac - 0.1) < 1e-9) add = 1 / 3;
+  else if (Math.abs(frac - 0.2) < 1e-9) add = 2 / 3;
+  else if (Math.abs(frac) < 1e-9) add = 0;
+  else add = frac;
+  return whole + add;
+}
+
+/** 顯示 IP 用：把 0.33 類型規整為 .0/.1/.2 */
+function normalizeIP(v: number) {
+  const w = Math.trunc(Number(v) || 0);
+  const f = Math.round(((Number(v) || 0) - w) * 10);
+  const legal = f <= 0 ? 0 : f <= 1 ? 1 : 2;
+  return w + legal / 10;
+}
+
+/** .0 → .1 → .2 → 下一整局；dir=-1 為 -1/3 局 */
+function stepIP(ip: number, dir: 1 | -1 = 1) {
+  let w = Math.trunc(Number(ip) || 0);
+  let f = Math.round(((Number(ip) || 0) - w) * 10); // 0/1/2
+  if (dir === 1) { if (f === 0) f = 1; else if (f === 1) f = 2; else { w += 1; f = 0; } }
+  else { if (f === 0) { w = Math.max(0, w - 1); f = 2; } else if (f === 1) f = 0; else f = 1; }
+  return Math.max(0, w + f / 10);
+}
+
+/** 三段資料空物件 */
+const emptyTriple = (): Triple => ({
+  batting: initBatting(),
+  pitching: initPitching(),
+  fielding: initFielding(),
+  baserunning: initBaserun(),
+});
+
+/** 復原型別（相容舊資料欄位） */
 function reviveTriple(anyTriple: any): Triple {
   return {
     batting: { ...initBatting(), ...(anyTriple?.batting || {}) },
@@ -170,7 +179,7 @@ function reviveTriple(anyTriple: any): Triple {
 function revivePlayers(raw: any): Player[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((p) => ({
-    id: Number(p?.id),
+    id: String(p?.id ?? crypto.randomUUID()),
     name: String(p?.name ?? ""),
     positions: Array.isArray(p?.positions) ? p.positions : [],
     throws: ["R", "L", "S"].includes(p?.throws) ? p.throws : "R",
@@ -185,27 +194,27 @@ function revivePlayers(raw: any): Player[] {
 function reviveGames(raw: any): Game[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((g) => {
-    const stats: Record<number, Triple> = {};
+    const stats: Record<string, Triple> = {};
     if (g?.stats && typeof g.stats === "object") {
       Object.keys(g.stats).forEach((k) => {
-        const pid = Number(k);
+        const pid = String(k);
         stats[pid] = reviveTriple(g.stats[k]);
       });
     }
     const roster: RosterSnapshot = {};
     if (g?.roster && typeof g.roster === "object") {
       Object.keys(g.roster).forEach((k) => {
-        roster[Number(k)] = {
+        roster[String(k)] = {
           name: String(g.roster[k]?.name ?? `#${k}`),
           positions: Array.isArray(g.roster[k]?.positions) ? g.roster[k].positions : [],
         };
       });
     }
     return {
-      id: Number(g?.id),
+      id: String(g?.id ?? crypto.randomUUID()),
       date: String(g?.date ?? ""),
       opponent: String(g?.opponent ?? "Unknown"),
-      lineup: Array.isArray(g?.lineup) ? g.lineup.map((n: any) => Number(n)) : [],
+      lineup: Array.isArray(g?.lineup) ? g.lineup.map((n: any) => String(n)) : [],
       innings: Array.isArray(g?.innings) ? g.innings.map(toNonNegNum) : Array(9).fill(0),
       stats,
       locked: !!g?.locked,
@@ -214,12 +223,38 @@ function reviveGames(raw: any): Game[] {
   });
 }
 
-function getNameAndPositions(players: Player[], g: Game, pid: number) {
+/** 以現有球員為主，找不到就使用 roster 快照顯示 */
+function getNameAndPositions(players: Player[], g: Game, pid: string) {
   const p = players.find((x) => x.id === pid);
   if (p) return { name: p.name, positions: p.positions };
   const snap = g.roster?.[pid];
   if (snap) return { name: snap.name, positions: snap.positions };
   return { name: `#${pid}`, positions: [] };
+}
+
+/** CSV 文字欄位防注入（=,+,-,@ 開頭）+ 引號逸出 */
+function csvText(s: string) {
+  let t = String(s);
+  if (/^[=+\-@]/.test(t)) t = "'" + t;
+  t = t.replace(/"/g, '""');
+  return `"${t}"`;
+}
+
+/** debounce 寫入 localStorage（避免拖曳/連續輸入爆寫） */
+function useDebouncedLocalStorage<T>(key: string, value: T, delay = 400) {
+  const first = useRef(true);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const h = setTimeout(() => {
+      try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+    }, delay);
+    // 初次掛載也要寫，避免使用者直接關頁沒存到
+    if (first.current) {
+      first.current = false;
+      try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+    }
+    return () => clearTimeout(h);
+  }, [key, value, delay]);
 }
 
 /* =========================================================
@@ -283,7 +318,7 @@ function calcStats(
       ? (((H + toNonNegNum(batting.BB)) * TB) / (AB + toNonNegNum(batting.BB))).toFixed(1)
       : "0.0";
 
-    // ---- Pitching
+  // ---- Pitching
   const ipInnings = ipToInnings(pitching.IP);
 
   const ERA  = safeDiv(toNonNegNum(pitching.ER) * 9, ipInnings, 2);
@@ -304,7 +339,6 @@ function calcStats(
   const KBB = safeDiv(toNonNegNum(pitching.K),     toNonNegNum(pitching.BB), 2);
   const OBA = safeDiv(toNonNegNum(pitching.H),     toNonNegNum(pitching.AB), 3);
   const PC  = toNonNegNum(pitching.PC);
-
 
   // ---- Fielding
   const FPCT =
@@ -361,40 +395,27 @@ export default function Home() {
   // ✅ 從 localStorage 初始化
   const [players, setPlayers] = useState<Player[]>(() => {
     if (typeof window === "undefined") return [];
-    const raw = safeParse(localStorage.getItem(STORAGE.players), []);
-    return revivePlayers(raw);
+    return revivePlayers(safeParse(localStorage.getItem(STORAGE.players), []));
   });
 
   const [games, setGames] = useState<Game[]>(() => {
     if (typeof window === "undefined") return [];
-    const raw = safeParse(localStorage.getItem(STORAGE.games), []);
-    return reviveGames(raw);
+    return reviveGames(safeParse(localStorage.getItem(STORAGE.games), []));
   });
 
-  const [compare, setCompare] = useState<number[]>(() => {
+  const [compare, setCompare] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     const raw = safeParse(localStorage.getItem(STORAGE.compare), []);
-    return Array.isArray(raw) ? raw.map((n: any) => Number(n)).filter((n) => Number.isFinite(n)) : [];
+    return Array.isArray(raw) ? raw.map((n: any) => String(n)) : [];
   });
 
-  // ✅ 任何變更自動存回 localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE.players, JSON.stringify(players));
-    } catch {}
-  }, [players]);
+  // ✅ localStorage 寫入「節流」：避免高頻操作造成卡頓
+  useDebouncedLocalStorage(STORAGE.players, players, 400);
+  useDebouncedLocalStorage(STORAGE.games, games, 400);
+  useDebouncedLocalStorage(STORAGE.compare, compare, 400);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE.games, JSON.stringify(games));
-    } catch {}
-  }, [games]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE.compare, JSON.stringify(compare));
-    } catch {}
-  }, [compare]);
+  // ✅ 雲端 updated_at 記錄，用來做衝突檢查
+  const [cloudTS, setCloudTS] = useState<string | null>(null);
 
   /* ---------------- Navbar ---------------- */
   const Navbar = () => (
@@ -427,7 +448,7 @@ export default function Home() {
     setPlayers((prev) => [
       ...prev,
       {
-        id: Date.now(),
+        id: crypto.randomUUID(), // ✅ UUID
         name: p.name.trim(),
         positions: p.positions,
         throws: p.throws,
@@ -440,7 +461,7 @@ export default function Home() {
     ]);
   };
 
-  const deletePlayer = (id: number) => {
+  const deletePlayer = (id: string) => {
     // 未鎖定比賽中仍在打線 → 禁止刪除
     const usedInUnlocked = games.some((g) => !g.locked && g.lineup.includes(id));
     if (usedInUnlocked) {
@@ -469,7 +490,7 @@ export default function Home() {
     setGames((prev) => [
       ...prev,
       {
-        id: Date.now(),
+        id: crypto.randomUUID(), // ✅ UUID
         date,
         opponent,
         lineup: [],
@@ -481,7 +502,7 @@ export default function Home() {
     ]);
   };
 
-  const lockGame = (gid: number) => {
+  const lockGame = (gid: string) => {
     if (!confirm("存檔後將無法再編輯此場比賽，確定存檔？")) return;
     // 鎖定時做 roster 快照，確保之後刪除球員也不會影響顯示
     setGames((prev) =>
@@ -498,8 +519,8 @@ export default function Home() {
   };
 
   const updateGameStat = (
-    gid: number,
-    pid: number,
+    gid: string,
+    pid: string,
     section: keyof Triple,
     key: string,
     val: number
@@ -523,7 +544,7 @@ export default function Home() {
     );
   };
 
-  const updateInning = (gid: number, idx: number, val: number) => {
+  const updateInning = (gid: string, idx: number, val: number) => {
     const safeVal = Math.max(0, Number(val) || 0);
     setGames((prev) =>
       prev.map((g) => {
@@ -535,7 +556,7 @@ export default function Home() {
     );
   };
 
-  const addToLineup = (g: Game, pid: number) => {
+  const addToLineup = (g: Game, pid: string) => {
     if (g.locked) return;
     if (g.lineup.includes(pid)) return;
     if (g.lineup.length >= 9) return;
@@ -552,7 +573,7 @@ export default function Home() {
     );
   };
 
-  const removeFromLineup = (g: Game, pid: number) => {
+  const removeFromLineup = (g: Game, pid: string) => {
     if (g.locked) return;
     setGames((prev) =>
       prev.map((x) => (x.id === g.id ? { ...x, lineup: x.lineup.filter((id) => id !== pid) } : x))
@@ -601,61 +622,29 @@ export default function Home() {
     );
     alert("生涯數據已同步（累加所有比賽）。");
   };
-const importJSON = (file: File) => {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const raw = JSON.parse(String(reader.result) || "{}");
-      const ps = revivePlayers(raw?.players ?? []);
-      const gs = reviveGames(raw?.games ?? []);
-      setPlayers(ps);
-      setGames(gs);
-      setCompare([]);
-      alert("匯入完成！");
-    } catch (e) {
-      alert("JSON 解析失敗，請確認檔案格式。");
-    }
+
+  /* ---------------- 匯入/匯出（JSON/CSV） ---------------- */
+  const importJSON = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const raw = JSON.parse(String(reader.result) || "{}");
+        const ps = revivePlayers(raw?.players ?? []);
+        const gs = reviveGames(raw?.games ?? []);
+        const cmp: string[] = Array.isArray(raw?.compare) ? raw.compare.map((n: any) => String(n)) : [];
+        setPlayers(ps);
+        setGames(gs);
+        setCompare(cmp);
+        alert("匯入完成！");
+      } catch (e) {
+        alert("JSON 解析失敗，請確認檔案格式。");
+      }
+    };
+    reader.readAsText(file);
   };
-  reader.readAsText(file);
-};
-// ======= 雲端同步：把整個 players/games/compare 存成一筆 JSON =======
-const CLOUD_ROW_ID = "default";
 
-async function loadFromCloud() {
-  const { data, error } = await supabase
-    .from("app_state")
-    .select("data")
-    .eq("id", CLOUD_ROW_ID)
-    .single();
-
-  if (error) {
-    console.error(error);
-    alert("雲端載入失敗：" + error.message);
-    return;
-  }
-  const payload = data?.data || {};
-  setPlayers(revivePlayers(payload.players ?? []));
-  setGames(reviveGames(payload.games ?? []));
-  setCompare(Array.isArray(payload.compare) ? payload.compare.map((n:any)=>Number(n)) : []);
-  alert("已從雲端載入。");
-}
-
-async function saveToCloud() {
-  const payload = { players, games, compare, v: 2, savedAt: new Date().toISOString() };
-  const { error } = await supabase
-    .from("app_state")
-    .upsert({ id: CLOUD_ROW_ID, data: payload, updated_at: new Date().toISOString() });
-  if (error) {
-    console.error(error);
-    alert("雲端存檔失敗：" + error.message);
-    return;
-  }
-  alert("已存到雲端。");
-}
-
-  /* ---------------- 匯出 ---------------- */
   const exportJSON = () => {
-    const blob = new Blob([JSON.stringify({ players, games }, null, 2)], {
+    const blob = new Blob([JSON.stringify({ v: 3, players, games, compare }, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
@@ -667,10 +656,17 @@ async function saveToCloud() {
   };
 
   const exportCSV = () => {
-    let csv = "Name,Pos,AB,H,AVG,OBP,SLG,OPS,ERA,WHIP,K9,FIP,FPCT\n";
+    const headers = [
+      "Name","Pos","AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"
+    ];
+    let csv = headers.join(",") + "\n";
     players.forEach((p) => {
       const s = calcStats(p.batting, p.pitching, p.fielding, p.baserunning);
-      csv += `${p.name},"${p.positions.join("/")}",${s.AB},${s.H},${s.AVG},${s.OBP},${s.SLG},${s.OPS},${s.ERA},${s.WHIP},${s.K9},${s.FIP},${s.FPCT}\n`;
+      csv += [
+        csvText(p.name),
+        csvText(p.positions.join("/")),
+        s.AB, s.H, s.AVG, s.OBP, s.SLG, s.OPS, s.ERA, s.WHIP, s.K9, s.FIP, s.FPCT
+      ].join(",") + "\n";
     });
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -682,35 +678,91 @@ async function saveToCloud() {
   };
 
   const exportGameCSV = (g: Game) => {
-  const headers = [
-    "Player","Pos","AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT",
-    "R","RBI","TB","TOB","BBK","SB","CS","SBP","PC"
-  ];
-  let csv = headers.join(",") + "\n";
+    const headers = [
+      "Player","Pos","AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT",
+      "R","RBI","TB","TOB","BBK","SB","CS","SBP","PC"
+    ];
+    let csv = headers.join(",") + "\n";
 
-  g.lineup.forEach((pid) => {
-    const { name, positions } = getNameAndPositions(players, g, pid);
-    const cur = g.stats[pid] ?? emptyTriple();
-    const s = calcStats(cur.batting, cur.pitching, cur.fielding, cur.baserunning);
-    const isP = positions.includes("P");
-    csv += [
-      name,
-      `"${positions.join("/")}"`,
-      s.AB, s.H, s.AVG, s.OBP, s.SLG, s.OPS,
-      isP ? s.ERA : "-", isP ? s.WHIP : "-", isP ? s.K9 : "-", isP ? s.FIP : "-", s.FPCT,
-      s.R, s.RBI, s.TB, s.TOB, s.BBK, s.SB, s.CS, s.SBP, isP ? s.PC : "-"
-    ].join(",") + "\n";
-  });
+    g.lineup.forEach((pid) => {
+      const { name, positions } = getNameAndPositions(players, g, pid);
+      const cur = g.stats[pid] ?? emptyTriple();
+      const s = calcStats(cur.batting, cur.pitching, cur.fielding, cur.baserunning);
+      const isP = positions.includes("P");
+      csv += [
+        csvText(name),
+        csvText(positions.join("/")),
+        s.AB, s.H, s.AVG, s.OBP, s.SLG, s.OPS,
+        isP ? s.ERA : "-", isP ? s.WHIP : "-", isP ? s.K9 : "-", isP ? s.FIP : "-", s.FPCT,
+        s.R, s.RBI, s.TB, s.TOB, s.BBK, s.SB, s.CS, s.SBP, isP ? s.PC : "-"
+      ].join(",") + "\n";
+    });
 
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `game-${g.date.replace(/\//g, "-")}-vs-${g.opponent}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `game-${g.date.replace(/\//g, "-")}-vs-${g.opponent}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
+  /* ---------------- 雲端同步（含衝突檢查） ---------------- */
+  async function loadFromCloud() {
+    const { data, error } = await supabase
+      .from("app_state")
+      .select("data, updated_at")
+      .eq("id", CLOUD_ROW_ID)
+      .single();
+
+    if (error) {
+      console.error(error);
+      alert("雲端載入失敗：" + error.message);
+      return;
+    }
+    const payload = data?.data || {};
+    setPlayers(revivePlayers(payload.players ?? []));
+    setGames(reviveGames(payload.games ?? []));
+    setCompare(Array.isArray(payload.compare) ? payload.compare.map((n: any) => String(n)) : []);
+    setCloudTS(data?.updated_at ?? null);
+    alert("已從雲端載入。");
+  }
+
+  async function saveToCloud() {
+    // 先讀雲端 updated_at，若與本地記錄不同 => 可能他裝置有更新
+    const { data: current, error: getErr } = await supabase
+      .from("app_state")
+      .select("updated_at")
+      .eq("id", CLOUD_ROW_ID)
+      .maybeSingle();
+
+    if (getErr) {
+      console.error(getErr);
+      alert("雲端檢查失敗：" + getErr.message);
+      return;
+    }
+    const remoteTS = current?.updated_at || null;
+    if (remoteTS && cloudTS && remoteTS !== cloudTS) {
+      const ok = confirm("偵測到雲端有較新的版本，確定要覆蓋嗎？（覆蓋後他裝置的變更會被取代）");
+      if (!ok) return;
+    }
+
+    const payload = { players, games, compare, v: 3, savedAt: new Date().toISOString() };
+
+    const { data: up, error: upErr } = await supabase
+      .from("app_state")
+      .upsert({ id: CLOUD_ROW_ID, data: payload, updated_at: new Date().toISOString() })
+      .select("updated_at")
+      .single();
+
+    if (upErr) {
+      console.error(upErr);
+      alert("雲端存檔失敗：" + upErr.message);
+      return;
+    }
+    setCloudTS(up?.updated_at ?? null);
+    alert("已存到雲端。");
+  }
 
   /* ---------------- UI：新增球員 ---------------- */
   const PlayersForm = () => {
@@ -935,59 +987,57 @@ async function saveToCloud() {
                         </tr>
                       </tbody>
                     </table>
-                   {/* 投手（新增 AB、PC；僅 P 顯示） */}
-{info.positions.includes("P") && (
-  <table className="border text-sm mb-2 w-full">
-    <thead>
-      <tr>
-        {Object.keys(initPitching()).map((k) => (
-          <th key={k} className="border px-2 py-1">{k}</th>
-        ))}
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        {Object.keys(initPitching()).map((stat) => (
-          <td key={stat} className="border px-2 py-1 text-center">
-            {readOnly ? (
-              // 唯讀：IP 顯示一位小數，其它照原樣
-              stat === "IP"
-                ? normalizeIP(toNonNegNum((cur.pitching as any)[stat])).toFixed(1)
-                : toNonNegNum((cur.pitching as any)[stat])
-            ) : stat === "IP" ? (
-              // 可編輯：IP 用「每按一下 +⅓；右鍵 −⅓」的按鈕
-              <button
-                type="button"
-                className="px-2 py-1 border rounded w-16 text-right"
-                title="點一下 +⅓ 局；右鍵 −⅓ 局"
-                onClick={() =>
-                  updateGameStat(g.id, pid, "pitching", "IP", stepIP(cur.pitching.IP, 1))
-                }
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  updateGameStat(g.id, pid, "pitching", "IP", stepIP(cur.pitching.IP, -1));
-                }}
-              >
-                {normalizeIP(cur.pitching.IP).toFixed(1)}
-              </button>
-            ) : (
-              // 其它投手欄位維持 input
-              <input
-                type="number"
-                min={0}
-                className="w-16 border rounded px-1 py-0.5 text-right"
-                value={toNonNegNum((cur.pitching as any)[stat])}
-                onChange={(e) =>
-                  updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
-                }
-              />
-            )}
-          </td>
-        ))}
-      </tr>
-    </tbody>
-  </table>
-)}
+
+                    {/* 投手（新增 AB、PC；IP 以按鈕 ±1/3 操作；僅 P 顯示） */}
+                    {info.positions.includes("P") && (
+                      <table className="border text-sm mb-2 w-full">
+                        <thead>
+                          <tr>
+                            {Object.keys(initPitching()).map((k) => (
+                              <th key={k} className="border px-2 py-1">{k}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            {Object.keys(initPitching()).map((stat) => (
+                              <td key={stat} className="border px-2 py-1 text-center">
+                                {readOnly ? (
+                                  stat === "IP"
+                                    ? normalizeIP(toNonNegNum((cur.pitching as any)[stat])).toFixed(1)
+                                    : toNonNegNum((cur.pitching as any)[stat])
+                                ) : stat === "IP" ? (
+                                  <button
+                                    type="button"
+                                    className="px-2 py-1 border rounded w-16 text-right"
+                                    title="點一下 +⅓ 局；右鍵 −⅓ 局"
+                                    onClick={() =>
+                                      updateGameStat(g.id, pid, "pitching", "IP", stepIP(cur.pitching.IP, 1))
+                                    }
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      updateGameStat(g.id, pid, "pitching", "IP", stepIP(cur.pitching.IP, -1));
+                                    }}
+                                  >
+                                    {normalizeIP(cur.pitching.IP).toFixed(1)}
+                                  </button>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    className="w-16 border rounded px-1 py-0.5 text-right"
+                                    value={toNonNegNum((cur.pitching as any)[stat])}
+                                    onChange={(e) =>
+                                      updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
+                                    }
+                                  />
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        </tbody>
+                      </table>
+                    )}
 
                     {/* 跑壘（SB、CS） */}
                     <table className="border text-sm mb-2 w-full">
@@ -1095,7 +1145,7 @@ async function saveToCloud() {
               </table>
             </div>
 
-            {/* 當場總結（維持原有關鍵指標） */}
+            {/* 當場總結 */}
             <div className="overflow-x-auto">
               <table className="border text-sm w-full mt-2">
                 <thead>
@@ -1262,35 +1312,33 @@ async function saveToCloud() {
 
   /* ---------------- UI：Export / Career ---------------- */
   const ExportPanel = () => (
-  <div className="flex flex-wrap items-center gap-2">
-    <button onClick={exportJSON} className="bg-gray-600 text-white px-3 py-1 rounded">匯出 JSON</button>
-    <button onClick={exportCSV}  className="bg-gray-800 text-white px-3 py-1 rounded">匯出 CSV</button>
+    <div className="flex flex-wrap items-center gap-2">
+      <button onClick={exportJSON} className="bg-gray-600 text-white px-3 py-1 rounded">匯出 JSON</button>
+      <button onClick={exportCSV}  className="bg-gray-800 text-white px-3 py-1 rounded">匯出 CSV</button>
 
-    <label className="inline-flex items-center gap-2 bg-white border px-3 py-1 rounded cursor-pointer">
-      <span>匯入 JSON</span>
-      <input
-        type="file"
-        accept=".json,application/json"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) importJSON(f);
-          e.currentTarget.value = "";
-        }}
-      />
-    </label>
+      <label className="inline-flex items-center gap-2 bg-white border px-3 py-1 rounded cursor-pointer">
+        <span>匯入 JSON</span>
+        <input
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) importJSON(f);
+            e.currentTarget.value = "";
+          }}
+        />
+      </label>
 
-    {/* ⭐ 新增：雲端同步 */}
-    <button onClick={loadFromCloud} className="bg-teal-600 text-white px-3 py-1 rounded">
-      雲端載入
-    </button>
-    <button onClick={saveToCloud} className="bg-teal-800 text-white px-3 py-1 rounded">
-      雲端存檔
-    </button>
-  </div>
-);
-
-
+      {/* ⭐ 雲端同步 */}
+      <button onClick={loadFromCloud} className="bg-teal-600 text-white px-3 py-1 rounded">
+        雲端載入
+      </button>
+      <button onClick={saveToCloud} className="bg-teal-800 text-white px-3 py-1 rounded">
+        雲端存檔
+      </button>
+    </div>
+  );
 
   // 生涯數據：呈現所有新增 MLB 指標
   const CareerPanel = () => (
