@@ -121,6 +121,21 @@ function ipToInnings(ipRaw: any) {
   else add = frac; // 萬一舊資料真的存了 0.33 這類小數，盡量照字面用
   return whole + add;
 }
+function normalizeIP(v: number) {
+  const w = Math.trunc(Number(v) || 0);
+  const f = Math.round(((Number(v) || 0) - w) * 10);
+  const legal = f <= 0 ? 0 : f <= 1 ? 1 : 2;
+  return w + legal / 10;
+}
+
+// .0 → .1 → .2 → 下一整局；dir=-1 為 -1/3 局
+function stepIP(ip: number, dir: 1 | -1 = 1) {
+  let w = Math.trunc(Number(ip) || 0);
+  let f = Math.round(((Number(ip) || 0) - w) * 10); // 0/1/2
+  if (dir === 1) { if (f === 0) f = 1; else if (f === 1) f = 2; else { w += 1; f = 0; } }
+  else { if (f === 0) { w = Math.max(0, w - 1); f = 2; } else if (f === 1) f = 0; else f = 1; }
+  return Math.max(0, w + f / 10);
+}
 
 const emptyTriple = (): Triple => ({
   batting: initBatting(),
