@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer,
   BarChart,
@@ -602,6 +603,40 @@ const importJSON = (file: File) => {
   };
   reader.readAsText(file);
 };
+// ======= 雲端同步：把整個 players/games/compare 存成一筆 JSON =======
+const CLOUD_ROW_ID = "default";
+
+async function loadFromCloud() {
+  const { data, error } = await supabase
+    .from("app_state")
+    .select("data")
+    .eq("id", CLOUD_ROW_ID)
+    .single();
+
+  if (error) {
+    console.error(error);
+    alert("雲端載入失敗：" + error.message);
+    return;
+  }
+  const payload = data?.data || {};
+  setPlayers(revivePlayers(payload.players ?? []));
+  setGames(reviveGames(payload.games ?? []));
+  setCompare(Array.isArray(payload.compare) ? payload.compare.map((n:any)=>Number(n)) : []);
+  alert("已從雲端載入。");
+}
+
+async function saveToCloud() {
+  const payload = { players, games, compare, v: 2, savedAt: new Date().toISOString() };
+  const { error } = await supabase
+    .from("app_state")
+    .upsert({ id: CLOUD_ROW_ID, data: payload, updated_at: new Date().toISOString() });
+  if (error) {
+    console.error(error);
+    alert("雲端存檔失敗：" + error.message);
+    return;
+  }
+  alert("已存到雲端。");
+}
 
   /* ---------------- 匯出 ---------------- */
   const exportJSON = () => {
@@ -1206,12 +1241,21 @@ const importJSON = (file: File) => {
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) importJSON(f);
-          e.currentTarget.value = ""; // 允許重選同一檔
+          e.currentTarget.value = "";
         }}
       />
     </label>
+
+    {/* ⭐ 新增：雲端同步 */}
+    <button onClick={loadFromCloud} className="bg-teal-600 text-white px-3 py-1 rounded">
+      雲端載入
+    </button>
+    <button onClick={saveToCloud} className="bg-teal-800 text-white px-3 py-1 rounded">
+      雲端存檔
+    </button>
   </div>
 );
+
 
 
   // 生涯數據：呈現所有新增 MLB 指標
