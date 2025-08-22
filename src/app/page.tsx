@@ -108,6 +108,18 @@ const STORAGE = {
   games: "rsbm.games.v2",
   compare: "rsbm.compare.v1",
 };
+// --- Innings 轉換：支援 6.1 / 6.2 記法 ---
+function ipToInnings(ipRaw: any) {
+  const ip = Number(ipRaw) || 0;
+  const whole = Math.trunc(ip);
+  const frac = Number((ip - whole).toFixed(1)); // 只取到十分位避免 0.1000003 類誤差
+  let add = 0;
+  if (Math.abs(frac - 0.1) < 1e-9) add = 1 / 3;      // 0.1 => 1/3
+  else if (Math.abs(frac - 0.2) < 1e-9) add = 2 / 3; // 0.2 => 2/3
+  else if (Math.abs(frac) < 1e-9) add = 0;           // 0.0
+  else add = frac; // 萬一舊資料真的存了 0.33 這類小數，盡量照字面用
+  return whole + add;
+}
 
 const emptyTriple = (): Triple => ({
   batting: initBatting(),
@@ -255,31 +267,28 @@ function calcStats(
       ? (((H + toNonNegNum(batting.BB)) * TB) / (AB + toNonNegNum(batting.BB))).toFixed(1)
       : "0.0";
 
-  // ---- Pitching
-  const ERA = safeDiv(toNonNegNum(pitching.ER) * 9, toNonNegNum(pitching.IP), 2);
-  const WHIP = safeDiv(
-    toNonNegNum(pitching.BB) + toNonNegNum(pitching.H),
-    toNonNegNum(pitching.IP),
-    2
-  );
-  const K9 = safeDiv(toNonNegNum(pitching.K) * 9, toNonNegNum(pitching.IP), 2);
-  const FIP =
-    pitching.IP > 0
-      ? (
-          (13 * toNonNegNum(pitching.HR) +
-            3 * toNonNegNum(pitching.BB) -
-            2 * toNonNegNum(pitching.K)) /
-            toNonNegNum(pitching.IP) +
-          3.2
-        ).toFixed(2)
-      : "0.00";
+    // ---- Pitching
+  const ipInnings = ipToInnings(pitching.IP);
+
+  const ERA  = safeDiv(toNonNegNum(pitching.ER) * 9, ipInnings, 2);
+  const WHIP = safeDiv(toNonNegNum(pitching.BB) + toNonNegNum(pitching.H), ipInnings, 2);
+  const K9   = safeDiv(toNonNegNum(pitching.K) * 9, ipInnings, 2);
+  const FIP  = ipInnings > 0
+    ? (
+        (13 * toNonNegNum(pitching.HR) +
+         3  * toNonNegNum(pitching.BB) -
+         2  * toNonNegNum(pitching.K)) / ipInnings
+        + 3.2
+      ).toFixed(2)
+    : "0.00";
 
   // 投手擴充
-  const BB9 = safeDiv(toNonNegNum(pitching.BB) * 9, toNonNegNum(pitching.IP), 2);
-  const H9 = safeDiv(toNonNegNum(pitching.H) * 9, toNonNegNum(pitching.IP), 2);
-  const KBB = safeDiv(toNonNegNum(pitching.K), toNonNegNum(pitching.BB), 2);
-  const OBA = safeDiv(toNonNegNum(pitching.H), toNonNegNum(pitching.AB), 3);
-  const PC = toNonNegNum(pitching.PC);
+  const BB9 = safeDiv(toNonNegNum(pitching.BB) * 9, ipInnings, 2);
+  const H9  = safeDiv(toNonNegNum(pitching.H)  * 9, ipInnings, 2);
+  const KBB = safeDiv(toNonNegNum(pitching.K),     toNonNegNum(pitching.BB), 2);
+  const OBA = safeDiv(toNonNegNum(pitching.H),     toNonNegNum(pitching.AB), 3);
+  const PC  = toNonNegNum(pitching.PC);
+
 
   // ---- Fielding
   const FPCT =
@@ -293,7 +302,7 @@ function calcStats(
   // ---- Baserunning
   const SB = toNonNegNum(baserunning.SB);
   const CS = toNonNegNum(baserunning.CS);
-  const SBP = safeDiv(SB, SB + CS, 3); // 0.xxx
+  const SBP = SB + CS > 0 ? ((SB / (SB + CS)) * 100).toFixed(1) + "%" : "0%";
 
   return {
     AB,
@@ -576,6 +585,23 @@ export default function Home() {
     );
     alert("生涯數據已同步（累加所有比賽）。");
   };
+const importJSON = (file: File) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const raw = JSON.parse(String(reader.result) || "{}");
+      const ps = revivePlayers(raw?.players ?? []);
+      const gs = reviveGames(raw?.games ?? []);
+      setPlayers(ps);
+      setGames(gs);
+      setCompare([]);
+      alert("匯入完成！");
+    } catch (e) {
+      alert("JSON 解析失敗，請確認檔案格式。");
+    }
+  };
+  reader.readAsText(file);
+};
 
   /* ---------------- 匯出 ---------------- */
   const exportJSON = () => {
@@ -604,6 +630,37 @@ export default function Home() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const exportGameCSV = (g: Game) => {
+  const headers = [
+    "Player","Pos","AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT",
+    "R","RBI","TB","TOB","BBK","SB","CS","SBP","PC"
+  ];
+  let csv = headers.join(",") + "\n";
+
+  g.lineup.forEach((pid) => {
+    const { name, positions } = getNameAndPositions(players, g, pid);
+    const cur = g.stats[pid] ?? emptyTriple();
+    const s = calcStats(cur.batting, cur.pitching, cur.fielding, cur.baserunning);
+    const isP = positions.includes("P");
+    csv += [
+      name,
+      `"${positions.join("/")}"`,
+      s.AB, s.H, s.AVG, s.OBP, s.SLG, s.OPS,
+      isP ? s.ERA : "-", isP ? s.WHIP : "-", isP ? s.K9 : "-", isP ? s.FIP : "-", s.FPCT,
+      s.R, s.RBI, s.TB, s.TOB, s.BBK, s.SB, s.CS, s.SBP, isP ? s.PC : "-"
+    ].join(",") + "\n";
+  });
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `game-${g.date.replace(/\//g, "-")}-vs-${g.opponent}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 
   /* ---------------- UI：新增球員 ---------------- */
   const PlayersForm = () => {
@@ -1136,11 +1193,26 @@ export default function Home() {
 
   /* ---------------- UI：Export / Career ---------------- */
   const ExportPanel = () => (
-    <div className="flex gap-2">
-      <button onClick={exportJSON} className="bg-gray-600 text-white px-3 py-1 rounded">匯出 JSON</button>
-      <button onClick={exportCSV} className="bg-gray-800 text-white px-3 py-1 rounded">匯出 CSV</button>
-    </div>
-  );
+  <div className="flex flex-wrap items-center gap-2">
+    <button onClick={exportJSON} className="bg-gray-600 text-white px-3 py-1 rounded">匯出 JSON</button>
+    <button onClick={exportCSV}  className="bg-gray-800 text-white px-3 py-1 rounded">匯出 CSV</button>
+
+    <label className="inline-flex items-center gap-2 bg-white border px-3 py-1 rounded cursor-pointer">
+      <span>匯入 JSON</span>
+      <input
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) importJSON(f);
+          e.currentTarget.value = ""; // 允許重選同一檔
+        }}
+      />
+    </label>
+  </div>
+);
+
 
   // 生涯數據：呈現所有新增 MLB 指標
   const CareerPanel = () => (
