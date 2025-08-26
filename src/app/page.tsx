@@ -190,7 +190,7 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
     ? (((H + toNonNegNum(batting.BB)) * TB) / (AB + toNonNegNum(batting.BB))).toFixed(1)
     : "0.0";
 
-  const ip = ipToInnings(pitching.IP);
+  const ip = ipToInnings(Number(pitching.IP));
   const ERA  = safeDiv(toNonNegNum(pitching.ER) * 9, ip, 2);
   const WHIP = safeDiv(toNonNegNum(pitching.BB) + toNonNegNum(pitching.H), ip, 2);
   const K9   = safeDiv(toNonNegNum(pitching.K) * 9, ip, 2);
@@ -226,7 +226,7 @@ export default function Home() {
   const [games,   setGames]   = useState<Game[]>([]);
   const [compare, setCompare] = useState<number[]>([]);
   const [mounted, setMounted] = useState(false);
-
+  const [ipDraft, setIpDraft] = useState<Record<string, string>>({});
   // 雲端 updated_at（做覆蓋確認用）
   const [cloudTS, setCloudTS] = useState<string | null>(null);
 
@@ -678,19 +678,56 @@ const BoxScore = () => (
                       </thead>
                       <tbody>
                         <tr>
-                          {Object.keys(initPitching()).map((stat) => (
-                            <td key={stat} className="border px-2 py-1 text-center">
-                              {readOnly ? toNonNegNum((cur.pitching as any)[stat]) : (
-                                <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
-                                  value={toNonNegNum((cur.pitching as any)[stat])}
-                                  onChange={(e) => updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))} />
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  )}
+                         {Object.keys(initPitching()).map((stat) => {
+  const isIP = stat === "IP";
+  const key = `${g.id}:${pid}`;
+  const rawValue = (cur.pitching as any)[stat];
+
+  return (
+    <td key={stat} className="border px-2 py-1 text-center">
+      {readOnly ? (
+        toNonNegNum(rawValue)
+      ) : isIP ? (
+        <input
+          type="number"
+          min={0}
+          step={0.1}
+          className="w-16 border rounded px-1 py-0.5 text-right"
+          value={ipDraft[key] ?? String(rawValue ?? "")}
+          onChange={(e) => {
+            setIpDraft((d) => ({ ...d, [key]: e.target.value }));
+          }}
+          onBlur={() => {
+            const v = ipDraft[key];
+            const num = v === "" || v === "." ? 0 : Number(v);
+            updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(num));
+            setIpDraft((d) => {
+              const { [key]: _removed, ...rest } = d;
+              return rest;
+            });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+          }}
+        />
+      ) : (
+        <input
+          type="number"
+          min={0}
+          className="w-16 border rounded px-1 py-0.5 text-right"
+          value={toNonNegNum(rawValue)}
+          onChange={(e) =>
+            updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
+          }
+        />
+      )}
+    </td>
+  );
+})}
+</tr>
+</tbody>
+</table>
+
 
                   {/* 跑壘 */}
                   <table className="border text-sm mb-2 w-full">
