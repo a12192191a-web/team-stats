@@ -150,6 +150,19 @@ function ipToInnings(ipRaw: any) {
   if (Math.abs(f - 0.2) < 1e-9) return w + 2 / 3;
   return w + f; // 相容舊資料
 }
+// 將實數局數(含 1/3、2/3)轉回顯示用字串：7, 6.1, 6.2
+function formatIpDisplay(ipRaw: any) {
+  const n = Number(ipRaw) || 0;
+  const w = Math.trunc(n);
+  // 以較寬容的誤差判斷 1/3、2/3
+  const f = n - w;
+  if (Math.abs(f) < 1e-3) return String(w);
+  if (Math.abs(f - 1/3) < 1e-3) return `${w}.1`;
+  if (Math.abs(f - 2/3) < 1e-3) return `${w}.2`;
+  // 其餘情況（例：.3 或資料異常），就顯示整數
+  return String(Math.round(n));
+}
+
 
 /* localStorage 寫入（首輪不寫，避免把舊資料覆蓋成空） */
 function useDebouncedLocalStorage<T>(key: string, value: T, delay = 400) {
