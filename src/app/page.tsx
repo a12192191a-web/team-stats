@@ -351,6 +351,17 @@ const addGame = () => {
       return { ...g, locked: true, roster: snap };
     }));
   };
+  // ⭐ 新增：刪除比賽
+  const deleteGame = (gid: number) => {
+    const g = games.find(x => x.id === gid);
+    if (!g) return;
+    if (!g.locked) {
+      alert("請先存檔鎖定比賽，再刪除。");
+      return;
+    }
+    if (!confirm(`確定刪除比賽？\n\n日期：${g.date}\n對手：${g.opponent}`)) return;
+    setGames(prev => prev.filter(x => x.id !== gid));
+  };
 
   const updateGameStat = (gid: number, pid: number, section: keyof Triple, key: string, val: number) => {
     const safeVal = Math.max(0, Number(val) || 0);
@@ -535,10 +546,8 @@ const addGame = () => {
     </div>
   );
 
-  /* ---------------- UI：比賽紀錄 ---------------- */
-/* =========================================================
-   BoxScore（修正版：新增匯出 CSV 按鈕）
-========================================================= */
+  /* ---------------- UI：比賽紀錄  BoxScore---------------- */
+  
 const BoxScore = () => (
   <div className="space-y-4">
     <div className="flex items-center gap-2">
@@ -567,6 +576,16 @@ const BoxScore = () => (
                 <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">已鎖定</span>
               )}
               <button onClick={() => exportGameCSV(g)} className="bg-gray-700 text-white px-3 py-1 rounded">匯出 CSV</button>
+             <button
+  onClick={() => deleteGame(g.id)}
+  disabled={!g.locked}
+  className={`px-3 py-1 rounded text-white ${
+    g.locked ? "bg-red-600 hover:bg-red-700" : "bg-red-600/40 cursor-not-allowed"
+  }`}
+>
+  刪除
+</button>
+
             </div>
           </div>
 
