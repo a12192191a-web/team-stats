@@ -140,28 +140,33 @@ function csvText(s: string) {
   return `"${t}"`;
 }
 
-/* ⅓局轉換：支援 6.1 / 6.2 記法 */
-function ipToInnings(ipRaw: any) {
-  const ip = Number(ipRaw) || 0;
-  const w = Math.trunc(ip);
-  const f = Number((ip - w).toFixed(1));
-  if (Math.abs(f) < 1e-9) return w;
-  if (Math.abs(f - 0.1) < 1e-9) return w + 1 / 3;
-  if (Math.abs(f - 0.2) < 1e-9) return w + 2 / 3;
-  return w + f; // 相容舊資料
+// 正規化：把任何十進位 IP 轉成 MLB 合法小數（.0/.1/.2），多的出局數自動進位
+function normalizeIpDecimal(ipRaw: any): number {
+  const ip = Math.max(0, Number(ipRaw) || 0);
+  const whole = Math.trunc(ip);
+  const tenths = Math.round((ip - whole) * 10); // 0..9 對應 outs 數
+  const totalOuts = whole * 3 + tenths;
+  const innings = Math.floor(totalOuts / 3);
+  const remOuts = totalOuts % 3;                // 0,1,2
+  const frac = remOuts === 0 ? 0 : remOuts === 1 ? 0.1 : 0.2;
+  return +(innings + frac).toFixed(1);
 }
-// 將實數局數(含 1/3、2/3)轉回顯示用字串：7, 6.1, 6.2
+
+// 顯示用：把任何輸入（小數或實數）照 MLB 記法顯示成 7 / 6.1 / 6.2
 function formatIpDisplay(ipRaw: any) {
-  const n = Number(ipRaw) || 0;
-  const w = Math.trunc(n);
-  // 以較寬容的誤差判斷 1/3、2/3
-  const f = n - w;
-  if (Math.abs(f) < 1e-3) return String(w);
-  if (Math.abs(f - 1/3) < 1e-3) return `${w}.1`;
-  if (Math.abs(f - 2/3) < 1e-3) return `${w}.2`;
-  // 其餘情況（例：.3 或資料異常），就顯示整數
-  return String(Math.round(n));
+  const n = normalizeIpDecimal(ipRaw);          // 先規範化
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
+
+/* ⅓局轉換：以 outs 為準，支援 .3 以上自動進位（計算端用） */
+function ipToInnings(ipRaw: any) {
+  const ip = Math.max(0, Number(ipRaw) || 0);
+  const whole = Math.trunc(ip);
+  const tenths = Math.round((ip - whole) * 10); // 0..9
+  const totalOuts = whole * 3 + tenths;
+  return totalOuts / 3;                          // 回傳實數局數（含 1/3、2/3）
+}
+
 
 
 /* localStorage 寫入（首輪不寫，避免把舊資料覆蓋成空） */
@@ -670,42 +675,18 @@ const BoxScore = () => (
                     </thead>
                     <tbody>
                       <tr>
-                        {Object.keys(initBatting()).map((stat) => (
-                          <td key={stat} className="border px-2 py-1 text-center">
-                            {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
-                              <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
-                                value={toNonNegNum((cur.batting as any)[stat])}
-                                onChange={(e) => updateGameStat(g.id, pid, "batting", stat, toNonNegNum(e.target.value))} />
-                            )}
-                          </td>
-                        ))}
-                      </tr>
-                    </tbody>
-                  </table>
-
-                {/* 投手（僅 P 顯示） */}
-{info.positions.includes("P") && (
-  <table className="border text-sm mb-2 w-full">
-    <thead>
-      <tr>
-        {Object.keys(initPitching()).map((k) => (
-          <th key={k} className="border px-2 py-1">{k}</th>
-        ))}
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        {Object.keys(initPitching()).map((stat) => {
+                        {Object.keys(initPitching()).map((stat) => {
   const isIP = stat === "IP";
-  const key = `${g.id}:${pid}`;                 // 每場比賽 × 球員 的唯一 key
-  const rawValue = (cur.pitching as any)[stat]; // 現存的數值
+  const key = `${g.id}:${pid}`;
+  const rawValue = (cur.pitching as any)[stat];
 
   return (
     <td key={stat} className="border px-2 py-1 text-center">
       {readOnly ? (
-        toNonNegNum(rawValue)
+        // ⭐ 唯讀顯示：IP 用 MLB 記法顯示（7 / 6.1 / 6.2）
+        isIP ? formatIpDisplay(rawValue) : toNonNegNum(rawValue)
       ) : isIP ? (
-        // ---- IP 欄位：step=0.1；輸入中用字串暫存；失焦自動進位 ----
+        // ⭐ IP 欄位：step 0.1，輸入當下就規範（.3 立刻進位），仍保留草稿避免「1.」跳值
         <input
           type="number"
           min={0}
@@ -713,46 +694,52 @@ const BoxScore = () => (
           className="w-16 border rounded px-1 py-0.5 text-right"
           value={ipDraft[key] ?? String(rawValue ?? "")}
           onChange={(e) => {
-            setIpDraft((d) => ({ ...d, [key]: e.target.value }));
+            const next = e.target.value;
+            setIpDraft((d) => {
+              const num = Number(next);
+              if (!Number.isNaN(num)) {
+                const normalized = normalizeIpDecimal(num);
+                if (normalized !== num) {
+                  // 當下就把 .3 / .4 / .7 等非法十進位規範為 MLB 記法並回寫
+                  updateGameStat(g.id, pid, "pitching", "IP", normalized);
+                  return { ...d, [key]: String(normalized) };
+                }
+              }
+              return { ...d, [key]: next };
+            });
           }}
           onBlur={() => {
-  const v = ipDraft[key];                         // ← 改 const
-  let num = v === "" || v === "." ? 0 : Number(v);
-
-  // 小數最多到 .3；>= .3 就進位成下一整數
-  const intPart = Math.trunc(num);
-  const fracPart = Number((num - intPart).toFixed(1));
-  if (fracPart >= 0.3 - 1e-9) {
-    num = intPart + 1;
-  }
-
-  updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(num));
-
-  setIpDraft((d) => {
-    const { [key]: _, ...rest } = d;              // 可把 _removed 換成 _
-    return rest;
-  });
-}}
-
+            const v = ipDraft[key];
+            const normalized = normalizeIpDecimal(v === "" || v === "." ? 0 : Number(v));
+            updateGameStat(g.id, pid, "pitching", "IP", normalized);
+            setIpDraft((d) => {
+              const { [key]: _, ...rest } = d;
+              return rest;
+            });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+          }}
         />
       ) : (
-                <input
-                  type="number"
-                  min={0}
-                  className="w-16 border rounded px-1 py-0.5 text-right"
-                  value={toNonNegNum(rawValue)}
-                  onChange={(e) =>
-                    updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
-                  }
-                />
-              )}
-            </td>
-          );
-        })}
-      </tr>
+        // 其它投手欄位維持原本邏輯
+        <input
+          type="number"
+          min={0}
+          className="w-16 border rounded px-1 py-0.5 text-right"
+          value={toNonNegNum(rawValue)}
+          onChange={(e) =>
+            updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
+          }
+        />
+      )}
+    </td>
+  );
+})}
+</tr>
     </tbody>
   </table>
-)}
+  )}
                  {/* 跑壘 */}
                   <table className="border text-sm mb-2 w-full">
                     <thead>
