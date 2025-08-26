@@ -160,15 +160,18 @@ function useDebouncedLocalStorage<T>(key: string, value: T, delay = 400) {
 }
 
 /* =========================================================
-   MLB 計算
+   MLB 計算（修正版：正統 MLB 算法）
 ========================================================= */
 function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, baserunning: Baserun) {
   const H  = toNonNegNum(batting["1B"]) + toNonNegNum(batting["2B"]) + toNonNegNum(batting["3B"]) + toNonNegNum(batting.HR);
-  const PA = H + toNonNegNum(batting.GO) + toNonNegNum(batting.FO) + toNonNegNum(batting.SH) + toNonNegNum(batting.SF)
-             + toNonNegNum(batting.BB) + toNonNegNum(batting.SO) + toNonNegNum(batting.HBP);
-  const AB = Math.max(0, PA - toNonNegNum(batting.BB) - toNonNegNum(batting.HBP) - toNonNegNum(batting.SF) - toNonNegNum(batting.SH));
+
+  // ➤ 正統 MLB 定義
+  const AB = H + toNonNegNum(batting.GO) + toNonNegNum(batting.FO) + toNonNegNum(batting.SO);
+  const PA = AB + toNonNegNum(batting.BB) + toNonNegNum(batting.HBP) + toNonNegNum(batting.SF) + toNonNegNum(batting.SH);
+
   const TB = toNonNegNum(batting["1B"]) + 2*toNonNegNum(batting["2B"]) + 3*toNonNegNum(batting["3B"]) + 4*toNonNegNum(batting.HR);
   const TOB = H + toNonNegNum(batting.BB) + toNonNegNum(batting.HBP);
+
   const safeDiv = (a: number, b: number, d = 3) => (b > 0 ? (a / b).toFixed(d) : d === 3 ? "0.000" : "0.00");
   const AVG = safeDiv(H, AB, 3);
   const OBPden = AB + toNonNegNum(batting.BB) + toNonNegNum(batting.HBP) + toNonNegNum(batting.SF);
@@ -176,7 +179,11 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
   const SLG = safeDiv(TB, AB, 3);
   const OPS = (parseFloat(OBP) + parseFloat(SLG)).toFixed(3);
   const BBK = safeDiv(toNonNegNum(batting.BB), toNonNegNum(batting.SO), 2);
-  const RC  = AB + toNonNegNum(batting.BB) > 0 ? (((H + toNonNegNum(batting.BB)) * TB) / (AB + toNonNegNum(batting.BB))).toFixed(1) : "0.0";
+
+  // Runs Created（簡化版）
+  const RC  = AB + toNonNegNum(batting.BB) > 0
+    ? (((H + toNonNegNum(batting.BB)) * TB) / (AB + toNonNegNum(batting.BB))).toFixed(1)
+    : "0.0";
 
   const ip = ipToInnings(pitching.IP);
   const ERA  = safeDiv(toNonNegNum(pitching.ER) * 9, ip, 2);
@@ -515,249 +522,260 @@ export default function Home() {
   );
 
   /* ---------------- UI：比賽紀錄 ---------------- */
-  const BoxScore = () => (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <button onClick={addGame} className="bg-blue-600 text-white px-3 py-1 rounded">新增比賽</button>
-      </div>
+/* =========================================================
+   BoxScore（修正版：新增匯出 CSV 按鈕）
+========================================================= */
+const BoxScore = () => (
+  <div className="space-y-4">
+    <div className="flex items-center gap-2">
+      <button onClick={addGame} className="bg-blue-600 text-white px-3 py-1 rounded">新增比賽</button>
+    </div>
 
-      {games.map((g) => {
-        let teamH = 0, teamE = 0;
-        g.lineup.forEach((pid) => {
-          const cur = g.stats[pid] ?? emptyTriple();
-          teamH += toNonNegNum(cur.batting["1B"]) + toNonNegNum(cur.batting["2B"]) + toNonNegNum(cur.batting["3B"]) + toNonNegNum(cur.batting.HR);
-          teamE += toNonNegNum(cur.fielding.E);
-        });
-        const teamR = g.innings.reduce((a, b) => a + toNonNegNum(b), 0);
+    {games.map((g) => {
+      let teamH = 0, teamE = 0;
+      g.lineup.forEach((pid) => {
+        const cur = g.stats[pid] ?? emptyTriple();
+        teamH += toNonNegNum(cur.batting["1B"]) + toNonNegNum(cur.batting["2B"]) + toNonNegNum(cur.batting["3B"]) + toNonNegNum(cur.batting.HR);
+        teamE += toNonNegNum(cur.fielding.E);
+      });
+      const teamR = g.innings.reduce((a, b) => a + toNonNegNum(b), 0);
 
-        return (
-          <div key={g.id} className="border rounded p-3 bg-white space-y-4">
-            <div className="flex items-center gap-3">
-              <h3 className="font-semibold">{g.date} vs {g.opponent}</h3>
-              {!g.locked && <button onClick={() => lockGame(g.id)} className="ml-auto bg-emerald-600 text-white px-3 py-1 rounded">存檔鎖定</button>}
-              {g.locked && <span className="ml-auto text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">已鎖定</span>}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* 可加入名單 */}
-              <div className="border rounded p-2">
-                <div className="font-semibold mb-2">可加入名單（點擊加入，最多 9 人）</div>
-                <div className="flex flex-wrap gap-2">
-                  {players.filter((p) => !g.lineup.includes(p.id)).map((p) => (
-                    <button key={p.id}
-                      className={`px-2 py-1 rounded border ${g.lineup.length >= 9 || g.locked ? "opacity-40 cursor-not-allowed" : ""}`}
-                      onClick={() => addToLineup(g, p.id)} disabled={g.lineup.length >= 9 || g.locked}>
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 打線拖曳 */}
-              <div className="border rounded p-2">
-                <div className="font-semibold mb-2">打線（拖曳排序，可移除）</div>
-                <DragDropContext onDragEnd={onDragEnd(g)}>
-                  <Droppable droppableId={`lineup-${g.id}`}>
-                    {(prov) => (
-                      <ul ref={prov.innerRef} {...prov.droppableProps} className="space-y-1">
-                        {g.lineup.map((pid, idx) => {
-                          const info = getNameAndPositions(players, g, pid);
-                          return (
-                            <Draggable key={pid} draggableId={`${pid}`} index={idx} isDragDisabled={g.locked}>
-                              {(p2) => (
-                                <li ref={p2.innerRef} {...p2.draggableProps} {...p2.dragHandleProps}
-                                    className="flex items-center justify-between bg-gray-50 border rounded px-2 py-1">
-                                  <span>{idx + 1}棒 — {info.name}（{info.positions.join("/") || "—"}）</span>
-                                  {!g.locked && (
-                                    <button onClick={() => removeFromLineup(g, pid)} className="text-xs bg-red-500 text-white px-2 py-0.5 rounded">✖</button>
-                                  )}
-                                </li>
-                              )}
-                            </Draggable>
-                          );
-                        })}
-                        {prov.placeholder}
-                      </ul>
-                    )}
-                  </Droppable>
-                </DragDropContext>
-              </div>
-            </div>
-
-            {/* 每位球員本場輸入 */}
-            <div className="space-y-3">
-              {g.lineup.map((pid) => {
-                const info = getNameAndPositions(players, g, pid);
-                const cur = g.stats[pid] ?? emptyTriple();
-                const readOnly = g.locked;
-
-                return (
-                  <div key={pid} className="border rounded p-2">
-                    <div className="font-semibold mb-1">{info.name}</div>
-
-                    {/* 打擊 */}
-                    <table className="border text-sm mb-2 w-full">
-                      <thead>
-                        <tr>{Object.keys(initBatting()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          {Object.keys(initBatting()).map((stat) => (
-                            <td key={stat} className="border px-2 py-1 text-center">
-                              {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
-                                <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
-                                  value={toNonNegNum((cur.batting as any)[stat])}
-                                  onChange={(e) => updateGameStat(g.id, pid, "batting", stat, toNonNegNum(e.target.value))} />
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-
-                    {/* 投手（僅 P 顯示） */}
-                    {info.positions.includes("P") && (
-                      <table className="border text-sm mb-2 w-full">
-                        <thead>
-                          <tr>{Object.keys(initPitching()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            {Object.keys(initPitching()).map((stat) => (
-                              <td key={stat} className="border px-2 py-1 text-center">
-                                {readOnly ? toNonNegNum((cur.pitching as any)[stat]) : (
-                                  <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
-                                    value={toNonNegNum((cur.pitching as any)[stat])}
-                                    onChange={(e) => updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))} />
-                                )}
-                              </td>
-                            ))}
-                          </tr>
-                        </tbody>
-                      </table>
-                    )}
-
-                    {/* 跑壘 */}
-                    <table className="border text-sm mb-2 w-full">
-                      <thead>
-                        <tr>{Object.keys(initBaserun()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          {Object.keys(initBaserun()).map((stat) => (
-                            <td key={stat} className="border px-2 py-1 text-center">
-                              {readOnly ? toNonNegNum((cur.baserunning as any)[stat]) : (
-                                <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
-                                  value={toNonNegNum((cur.baserunning as any)[stat])}
-                                  onChange={(e) => updateGameStat(g.id, pid, "baserunning", stat, toNonNegNum(e.target.value))} />
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-
-                    {/* 守備 */}
-                    <table className="border text-sm w-full">
-                      <thead>
-                        <tr>{Object.keys(initFielding()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          {Object.keys(initFielding()).map((stat) => (
-                            <td key={stat} className="border px-2 py-1 text-center">
-                              {readOnly ? toNonNegNum((cur.fielding as any)[stat]) : (
-                                <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
-                                  value={toNonNegNum((cur.fielding as any)[stat])}
-                                  onChange={(e) => updateGameStat(g.id, pid, "fielding", stat, toNonNegNum(e.target.value))} />
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* 逐局比分 */}
-            <div className="overflow-x-auto">
-              <table className="border text-sm w-full">
-                <thead>
-                  <tr>{[1,2,3,4,5,6,7,8,9].map((n) => <th key={n} className="border px-2 py-1 text-center">{n}</th>)}
-                    <th className="border px-2 py-1 text-center">R</th>
-                    <th className="border px-2 py-1 text-center">H</th>
-                    <th className="border px-2 py-1 text-center">E</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {g.innings.map((v, i) => (
-                      <td key={i} className="border px-2 py-1 text-center">
-                        {g.locked ? toNonNegNum(v) : (
-                          <input type="number" min={0} className="w-14 border rounded px-1 py-0.5 text-right"
-                                 value={toNonNegNum(v)} onChange={(e) => updateInning(g.id, i, toNonNegNum(e.target.value))} />
-                        )}
-                      </td>
-                    ))}
-                    <td className="border px-2 py-1 text-center">{teamR}</td>
-                    <td className="border px-2 py-1 text-center">{teamH}</td>
-                    <td className="border px-2 py-1 text-center">{teamE}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* 當場總結 */}
-            <div className="overflow-x-auto">
-              <table className="border text-sm w-full mt-2">
-                <thead>
-                  <tr>
-                    <th className="border px-2 py-1">球員</th>
-                    <th className="border px-2 py-1">AB</th>
-                    <th className="border px-2 py-1">H</th>
-                    <th className="border px-2 py-1">AVG</th>
-                    <th className="border px-2 py-1">OBP</th>
-                    <th className="border px-2 py-1">SLG</th>
-                    <th className="border px-2 py-1">OPS</th>
-                    <th className="border px-2 py-1">ERA</th>
-                    <th className="border px-2 py-1">WHIP</th>
-                    <th className="border px-2 py-1">K/9</th>
-                    <th className="border px-2 py-1">FIP</th>
-                    <th className="border px-2 py-1">FPCT</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {g.lineup.map((pid) => {
-                    const info = getNameAndPositions(players, g, pid);
-                    const cur  = g.stats[pid] ?? emptyTriple();
-                    const s = calcStats(cur.batting, cur.pitching, cur.fielding, cur.baserunning);
-                    return (
-                      <tr key={pid}>
-                        <td className="border px-2 py-1">{info.name}</td>
-                        <td className="border px-2 py-1 text-right">{s.AB}</td>
-                        <td className="border px-2 py-1 text-right">{s.H}</td>
-                        <td className="border px-2 py-1 text-right">{s.AVG}</td>
-                        <td className="border px-2 py-1 text-right">{s.OBP}</td>
-                        <td className="border px-2 py-1 text-right">{s.SLG}</td>
-                        <td className="border px-2 py-1 text-right">{s.OPS}</td>
-                        <td className="border px-2 py-1 text-right">{info.positions.includes("P") ? s.ERA : "-"}</td>
-                        <td className="border px-2 py-1 text-right">{info.positions.includes("P") ? s.WHIP : "-"}</td>
-                        <td className="border px-2 py-1 text-right">{info.positions.includes("P") ? s.K9  : "-"}</td>
-                        <td className="border px-2 py-1 text-right">{info.positions.includes("P") ? s.FIP : "-"}</td>
-                        <td className="border px-2 py-1 text-right">{s.FPCT}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+      return (
+        <div key={g.id} className="border rounded p-3 bg-white space-y-4">
+          {/* 標題列 + 匯出按鈕 */}
+          <div className="flex items-center gap-3">
+            <h3 className="font-semibold">{g.date} vs {g.opponent}</h3>
+            <div className="ml-auto flex gap-2">
+              {!g.locked && (
+                <button onClick={() => lockGame(g.id)} className="bg-emerald-600 text-white px-3 py-1 rounded">存檔鎖定</button>
+              )}
+              {g.locked && (
+                <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">已鎖定</span>
+              )}
+              <button onClick={() => exportGameCSV(g)} className="bg-gray-700 text-white px-3 py-1 rounded">匯出 CSV</button>
             </div>
           </div>
-        );
-      })}
-    </div>
-  );
+
+          {/* 可加入名單 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="border rounded p-2">
+              <div className="font-semibold mb-2">可加入名單（點擊加入，最多 9 人）</div>
+              <div className="flex flex-wrap gap-2">
+                {players.filter((p) => !g.lineup.includes(p.id)).map((p) => (
+                  <button key={p.id}
+                    className={`px-2 py-1 rounded border ${g.lineup.length >= 9 || g.locked ? "opacity-40 cursor-not-allowed" : ""}`}
+                    onClick={() => addToLineup(g, p.id)} disabled={g.lineup.length >= 9 || g.locked}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 打線拖曳 */}
+            <div className="border rounded p-2">
+              <div className="font-semibold mb-2">打線（拖曳排序，可移除）</div>
+              <DragDropContext onDragEnd={onDragEnd(g)}>
+                <Droppable droppableId={`lineup-${g.id}`}>
+                  {(prov) => (
+                    <ul ref={prov.innerRef} {...prov.droppableProps} className="space-y-1">
+                      {g.lineup.map((pid, idx) => {
+                        const info = getNameAndPositions(players, g, pid);
+                        return (
+                          <Draggable key={pid} draggableId={`${pid}`} index={idx} isDragDisabled={g.locked}>
+                            {(p2) => (
+                              <li ref={p2.innerRef} {...p2.draggableProps} {...p2.dragHandleProps}
+                                  className="flex items-center justify-between bg-gray-50 border rounded px-2 py-1">
+                                <span>{idx + 1}棒 — {info.name}（{info.positions.join("/") || "—"}）</span>
+                                {!g.locked && (
+                                  <button onClick={() => removeFromLineup(g, pid)} className="text-xs bg-red-500 text-white px-2 py-0.5 rounded">✖</button>
+                                )}
+                              </li>
+                            )}
+                          </Draggable>
+                        );
+                      })}
+                      {prov.placeholder}
+                    </ul>
+                  )}
+                </Droppable>
+              </DragDropContext>
+            </div>
+          </div>
+
+          {/* 每位球員本場輸入 */}
+          <div className="space-y-3">
+            {g.lineup.map((pid) => {
+              const info = getNameAndPositions(players, g, pid);
+              const cur = g.stats[pid] ?? emptyTriple();
+              const readOnly = g.locked;
+
+              return (
+                <div key={pid} className="border rounded p-2">
+                  <div className="font-semibold mb-1">{info.name}</div>
+
+                  {/* 打擊 */}
+                  <table className="border text-sm mb-2 w-full">
+                    <thead>
+                      <tr>{Object.keys(initBatting()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        {Object.keys(initBatting()).map((stat) => (
+                          <td key={stat} className="border px-2 py-1 text-center">
+                            {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
+                              <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
+                                value={toNonNegNum((cur.batting as any)[stat])}
+                                onChange={(e) => updateGameStat(g.id, pid, "batting", stat, toNonNegNum(e.target.value))} />
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* 投手（僅 P 顯示） */}
+                  {info.positions.includes("P") && (
+                    <table className="border text-sm mb-2 w-full">
+                      <thead>
+                        <tr>{Object.keys(initPitching()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          {Object.keys(initPitching()).map((stat) => (
+                            <td key={stat} className="border px-2 py-1 text-center">
+                              {readOnly ? toNonNegNum((cur.pitching as any)[stat]) : (
+                                <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
+                                  value={toNonNegNum((cur.pitching as any)[stat])}
+                                  onChange={(e) => updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))} />
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
+
+                  {/* 跑壘 */}
+                  <table className="border text-sm mb-2 w-full">
+                    <thead>
+                      <tr>{Object.keys(initBaserun()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        {Object.keys(initBaserun()).map((stat) => (
+                          <td key={stat} className="border px-2 py-1 text-center">
+                            {readOnly ? toNonNegNum((cur.baserunning as any)[stat]) : (
+                              <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
+                                value={toNonNegNum((cur.baserunning as any)[stat])}
+                                onChange={(e) => updateGameStat(g.id, pid, "baserunning", stat, toNonNegNum(e.target.value))} />
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* 守備 */}
+                  <table className="border text-sm w-full">
+                    <thead>
+                      <tr>{Object.keys(initFielding()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        {Object.keys(initFielding()).map((stat) => (
+                          <td key={stat} className="border px-2 py-1 text-center">
+                            {readOnly ? toNonNegNum((cur.fielding as any)[stat]) : (
+                              <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
+                                value={toNonNegNum((cur.fielding as any)[stat])}
+                                onChange={(e) => updateGameStat(g.id, pid, "fielding", stat, toNonNegNum(e.target.value))} />
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 逐局比分 */}
+          <div className="overflow-x-auto">
+            <table className="border text-sm w-full">
+              <thead>
+                <tr>{[1,2,3,4,5,6,7,8,9].map((n) => <th key={n} className="border px-2 py-1 text-center">{n}</th>)}
+                  <th className="border px-2 py-1 text-center">R</th>
+                  <th className="border px-2 py-1 text-center">H</th>
+                  <th className="border px-2 py-1 text-center">E</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  {g.innings.map((v, i) => (
+                    <td key={i} className="border px-2 py-1 text-center">
+                      {g.locked ? toNonNegNum(v) : (
+                        <input type="number" min={0} className="w-14 border rounded px-1 py-0.5 text-right"
+                               value={toNonNegNum(v)} onChange={(e) => updateInning(g.id, i, toNonNegNum(e.target.value))} />
+                      )}
+                    </td>
+                  ))}
+                  <td className="border px-2 py-1 text-center">{teamR}</td>
+                  <td className="border px-2 py-1 text-center">{teamH}</td>
+                  <td className="border px-2 py-1 text-center">{teamE}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* 當場總結 */}
+          <div className="overflow-x-auto">
+            <table className="border text-sm w-full mt-2">
+              <thead>
+                <tr>
+                  <th className="border px-2 py-1">球員</th>
+                  <th className="border px-2 py-1">AB</th>
+                  <th className="border px-2 py-1">H</th>
+                  <th className="border px-2 py-1">AVG</th>
+                  <th className="border px-2 py-1">OBP</th>
+                  <th className="border px-2 py-1">SLG</th>
+                  <th className="border px-2 py-1">OPS</th>
+                  <th className="border px-2 py-1">ERA</th>
+                  <th className="border px-2 py-1">WHIP</th>
+                  <th className="border px-2 py-1">K/9</th>
+                  <th className="border px-2 py-1">FIP</th>
+                  <th className="border px-2 py-1">FPCT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.lineup.map((pid) => {
+                  const info = getNameAndPositions(players, g, pid);
+                  const cur  = g.stats[pid] ?? emptyTriple();
+                  const s = calcStats(cur.batting, cur.pitching, cur.fielding, cur.baserunning);
+                  return (
+                    <tr key={pid}>
+                      <td className="border px-2 py-1">{info.name}</td>
+                      <td className="border px-2 py-1 text-right">{s.AB}</td>
+                      <td className="border px-2 py-1 text-right">{s.H}</td>
+                      <td className="border px-2 py-1 text-right">{s.AVG}</td>
+                      <td className="border px-2 py-1 text-right">{s.OBP}</td>
+                      <td className="border px-2 py-1 text-right">{s.SLG}</td>
+                      <td className="border px-2 py-1 text-right">{s.OPS}</td>
+                      <td className="border px-2 py-1 text-right">{info.positions.includes("P") ? s.ERA : "-"}</td>
+                      <td className="border px-2 py-1 text-right">{info.positions.includes("P") ? s.WHIP : "-"}</td>
+                      <td className="border px-2 py-1 text-right">{info.positions.includes("P") ? s.K9  : "-"}</td>
+                      <td className="border px-2 py-1 text-right">{info.positions.includes("P") ? s.FIP : "-"}</td>
+                      <td className="border px-2 py-1 text-right">{s.FPCT}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
 
   /* ---------------- UI：Compare ---------------- */
   const Compare = () => {
