@@ -670,7 +670,6 @@ const BoxScore = () => (
                     </tbody>
                   </table>
 
-                  {/* 投手（僅 P 顯示） */}
                 {/* 投手（僅 P 顯示） */}
 {info.positions.includes("P") && (
   <table className="border text-sm mb-2 w-full">
@@ -684,36 +683,49 @@ const BoxScore = () => (
     <tbody>
       <tr>
         {Object.keys(initPitching()).map((stat) => {
-          const isIP = stat === "IP";
-          const key = `${g.id}:${pid}`;
-          const rawValue = (cur.pitching as any)[stat];
+  const isIP = stat === "IP";
+  const key = `${g.id}:${pid}`;                 // 每場比賽 × 球員 的唯一 key
+  const rawValue = (cur.pitching as any)[stat]; // 現存的數值
 
-          return (
-            <td key={stat} className="border px-2 py-1 text-center">
-              {readOnly ? (
-                toNonNegNum(rawValue)
-              ) : isIP ? (
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  className="w-16 border rounded px-1 py-0.5 text-right"
-                  value={ipDraft[key] ?? String(rawValue ?? "")}
-                  onChange={(e) => setIpDraft((d) => ({ ...d, [key]: e.target.value }))}
-                  onBlur={() => {
-                    const v = ipDraft[key];
-                    const num = v === "" || v === "." ? 0 : Number(v);
-                    updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(num));
-                    setIpDraft((d) => {
-                      const { [key]: _removed, ...rest } = d;
-                      return rest;
-                    });
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
-                  }}
-                />
-              ) : (
+  return (
+    <td key={stat} className="border px-2 py-1 text-center">
+      {readOnly ? (
+        toNonNegNum(rawValue)
+      ) : isIP ? (
+        // ---- IP 欄位：step=0.1；輸入中用字串暫存；失焦自動進位 ----
+        <input
+          type="number"
+          min={0}
+          step={0.1}
+          className="w-16 border rounded px-1 py-0.5 text-right"
+          value={ipDraft[key] ?? String(rawValue ?? "")}
+          onChange={(e) => {
+            setIpDraft((d) => ({ ...d, [key]: e.target.value }));
+          }}
+          onBlur={() => {
+            let v = ipDraft[key];
+            let num = v === "" || v === "." ? 0 : Number(v);
+
+            // ⭐ 小數最多到 .3；>= .3 就進位成下一整數
+            const intPart = Math.trunc(num);
+            const fracPart = Number((num - intPart).toFixed(1));
+            if (fracPart >= 0.3 - 1e-9) {
+              num = intPart + 1;
+            }
+
+            updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(num));
+
+            // 清除暫存
+            setIpDraft((d) => {
+              const { [key]: _removed, ...rest } = d;
+              return rest;
+            });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+          }}
+        />
+      ) : (
                 <input
                   type="number"
                   min={0}
