@@ -671,65 +671,67 @@ const BoxScore = () => (
                   </table>
 
                   {/* 投手（僅 P 顯示） */}
-                  {info.positions.includes("P") && (
-                    <table className="border text-sm mb-2 w-full">
-                      <thead>
-                        <tr>{Object.keys(initPitching()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                         {Object.keys(initPitching()).map((stat) => {
-  const isIP = stat === "IP";
-  const key = `${g.id}:${pid}`;
-  const rawValue = (cur.pitching as any)[stat];
+                {/* 投手（僅 P 顯示） */}
+{info.positions.includes("P") && (
+  <table className="border text-sm mb-2 w-full">
+    <thead>
+      <tr>
+        {Object.keys(initPitching()).map((k) => (
+          <th key={k} className="border px-2 py-1">{k}</th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        {Object.keys(initPitching()).map((stat) => {
+          const isIP = stat === "IP";
+          const key = `${g.id}:${pid}`;
+          const rawValue = (cur.pitching as any)[stat];
 
-  return (
-    <td key={stat} className="border px-2 py-1 text-center">
-      {readOnly ? (
-        toNonNegNum(rawValue)
-      ) : isIP ? (
-        <input
-          type="number"
-          min={0}
-          step={0.1}
-          className="w-16 border rounded px-1 py-0.5 text-right"
-          value={ipDraft[key] ?? String(rawValue ?? "")}
-          onChange={(e) => {
-            setIpDraft((d) => ({ ...d, [key]: e.target.value }));
-          }}
-          onBlur={() => {
-            const v = ipDraft[key];
-            const num = v === "" || v === "." ? 0 : Number(v);
-            updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(num));
-            setIpDraft((d) => {
-              const { [key]: _removed, ...rest } = d;
-              return rest;
-            });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
-          }}
-        />
-      ) : (
-        <input
-          type="number"
-          min={0}
-          className="w-16 border rounded px-1 py-0.5 text-right"
-          value={toNonNegNum(rawValue)}
-          onChange={(e) =>
-            updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
-          }
-        />
-      )}
-    </td>
-  );
-})}
-</tr>
-</tbody>
-</table>
-
-
-                  {/* 跑壘 */}
+          return (
+            <td key={stat} className="border px-2 py-1 text-center">
+              {readOnly ? (
+                toNonNegNum(rawValue)
+              ) : isIP ? (
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  className="w-16 border rounded px-1 py-0.5 text-right"
+                  value={ipDraft[key] ?? String(rawValue ?? "")}
+                  onChange={(e) => setIpDraft((d) => ({ ...d, [key]: e.target.value }))}
+                  onBlur={() => {
+                    const v = ipDraft[key];
+                    const num = v === "" || v === "." ? 0 : Number(v);
+                    updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(num));
+                    setIpDraft((d) => {
+                      const { [key]: _removed, ...rest } = d;
+                      return rest;
+                    });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+                  }}
+                />
+              ) : (
+                <input
+                  type="number"
+                  min={0}
+                  className="w-16 border rounded px-1 py-0.5 text-right"
+                  value={toNonNegNum(rawValue)}
+                  onChange={(e) =>
+                    updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
+                  }
+                />
+              )}
+            </td>
+          );
+        })}
+      </tr>
+    </tbody>
+  </table>
+)}
+                 {/* 跑壘 */}
                   <table className="border text-sm mb-2 w-full">
                     <thead>
                       <tr>{Object.keys(initBaserun()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
