@@ -703,27 +703,24 @@ const BoxScore = () => (
             setIpDraft((d) => ({ ...d, [key]: e.target.value }));
           }}
           onBlur={() => {
-            let v = ipDraft[key];
-            let num = v === "" || v === "." ? 0 : Number(v);
+  const v = ipDraft[key];                         // ← 改 const
+  let num = v === "" || v === "." ? 0 : Number(v);
 
-            // ⭐ 小數最多到 .3；>= .3 就進位成下一整數
-            const intPart = Math.trunc(num);
-            const fracPart = Number((num - intPart).toFixed(1));
-            if (fracPart >= 0.3 - 1e-9) {
-              num = intPart + 1;
-            }
+  // 小數最多到 .3；>= .3 就進位成下一整數
+  const intPart = Math.trunc(num);
+  const fracPart = Number((num - intPart).toFixed(1));
+  if (fracPart >= 0.3 - 1e-9) {
+    num = intPart + 1;
+  }
 
-            updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(num));
+  updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(num));
 
-            // 清除暫存
-            setIpDraft((d) => {
-              const { [key]: _removed, ...rest } = d;
-              return rest;
-            });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
-          }}
+  setIpDraft((d) => {
+    const { [key]: _, ...rest } = d;              // 可把 _removed 換成 _
+    return rest;
+  });
+}}
+
         />
       ) : (
                 <input
