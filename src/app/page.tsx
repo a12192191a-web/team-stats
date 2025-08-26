@@ -7,6 +7,11 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
 } from "recharts";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+/* =========================================================
+   共用 class
+========================================================= */
+const BTN = "px-3 py-1 md:px-4 md:py-2 rounded";
+const IN_NUM = "w-16 md:w-20 h-9 md:h-10 border rounded px-1.5 text-right";
 
 /* =========================================================
    型別 & 初始結構
@@ -287,16 +292,16 @@ export default function Home() {
   }
 
   /* ---------------- Navbar ---------------- */
-  const Navbar = () => (
-    <div className="w-full sticky top-0 z-10 bg-[#08213A] text-white flex items-center gap-4 px-4 py-2">
-      <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
-      <div className="font-bold tracking-wide">RS Baseball Manager</div>
-      <div className="ml-auto flex gap-2">
-        <button onClick={() => setTopTab("players")}  className={`px-3 py-1 rounded ${topTab === "players"  ? "bg-white text-[#08213A]" : "bg-white/10"}`}>球員清單</button>
-        <button onClick={() => setTopTab("features")} className={`px-3 py-1 rounded ${topTab === "features" ? "bg-white text-[#08213A]" : "bg-white/10"}`}>其他功能</button>
-      </div>
+const Navbar = () => (
+  <div className="w-full sticky top-0 z-10 bg-[#08213A] text-white flex items-center gap-4 px-4 py-2">
+    <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
+    <div className="font-bold tracking-wide">RS Baseball Manager</div>
+    <div className="ml-auto flex gap-2">
+      <button onClick={() => setTopTab("players")}  className={`${BTN} ${topTab === "players"  ? "bg-white text-[#08213A]" : "bg-white/10"}`}>球員清單</button>
+      <button onClick={() => setTopTab("features")} className={`${BTN} ${topTab === "features" ? "bg-white text-[#08213A]" : "bg-white/10"}`}>其他功能</button>
     </div>
-  );
+  </div>
+);
 
   /* ---------------- 新增 / 刪除（含保護） ---------------- */
   const emptyTriple = (): Triple => ({ batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() });
@@ -319,11 +324,20 @@ export default function Home() {
   const clearPlayers = () => { if (confirm("確定清空所有球員？")) { setPlayers([]); setCompare([]); } };
 
   /* ---------------- 比賽：新增 / 編輯 / 鎖定 ---------------- */
-  const addGame = () => {
-    const opponent = prompt("對手名稱") || "Unknown";
-    const date = new Date().toLocaleDateString();
-    setGames((prev) => [...prev, { id: Date.now(), date, opponent, lineup: [], innings: Array(9).fill(0), stats: {}, locked: false, roster: {} }]);
-  };
+const addGame = () => {
+  const opponent = prompt("對手名稱") || "Unknown";
+  const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD，避免 hydration
+  setGames((prev) => [...prev, {
+    id: Date.now(),
+    date,
+    opponent,
+    lineup: [],
+    innings: Array(9).fill(0),
+    stats: {},
+    locked: false,
+    roster: {}
+  }]);
+};
 
   const lockGame = (gid: number) => {
     if (!confirm("存檔後將無法再編輯此場比賽，確定存檔？")) return;
@@ -583,13 +597,17 @@ const BoxScore = () => (
                         return (
                           <Draggable key={pid} draggableId={`${pid}`} index={idx} isDragDisabled={g.locked}>
                             {(p2) => (
-                              <li ref={p2.innerRef} {...p2.draggableProps} {...p2.dragHandleProps}
-                                  className="flex items-center justify-between bg-gray-50 border rounded px-2 py-1">
-                                <span>{idx + 1}棒 — {info.name}（{info.positions.join("/") || "—"}）</span>
-                                {!g.locked && (
-                                  <button onClick={() => removeFromLineup(g, pid)} className="text-xs bg-red-500 text-white px-2 py-0.5 rounded">✖</button>
-                                )}
-                              </li>
+                              <li
+  ref={p2.innerRef}
+  {...p2.draggableProps}
+  {...p2.dragHandleProps}
+  className="flex items-center justify-between bg-gray-50 border rounded px-2 py-2 md:py-2.5 touch-none select-none"
+>
+  <span className="flex-1 pr-2">{idx + 1}棒 — {info.name}（{info.positions.join("/") || "—"}）</span>
+  {!g.locked && (
+    <button onClick={() => removeFromLineup(g, pid)} className="text-xs md:text-sm bg-red-500 text-white px-2.5 md:px-3 py-0.5 md:py-1 rounded">✖</button>
+  )}
+</li>
                             )}
                           </Draggable>
                         );
@@ -611,7 +629,7 @@ const BoxScore = () => (
 
               return (
                 <div key={pid} className="border rounded p-2">
-                  <div className="font-semibold mb-1">{info.name}</div>
+  <div className="font-semibold mb-1">{info.name}</div>
 
                   {/* 打擊 */}
                   <table className="border text-sm mb-2 w-full">
@@ -700,9 +718,10 @@ const BoxScore = () => (
           </div>
 
           {/* 逐局比分 */}
-          <div className="overflow-x-auto">
-            <table className="border text-sm w-full">
-              <thead>
+          <div className="overflow-x-auto md:overflow-x-visible">
+  <table className="border text-sm w-full">
+    <thead className="sticky top-0 bg-white z-10">
+
                 <tr>{[1,2,3,4,5,6,7,8,9].map((n) => <th key={n} className="border px-2 py-1 text-center">{n}</th>)}
                   <th className="border px-2 py-1 text-center">R</th>
                   <th className="border px-2 py-1 text-center">H</th>
@@ -753,7 +772,7 @@ const BoxScore = () => (
                   const s = calcStats(cur.batting, cur.pitching, cur.fielding, cur.baserunning);
                   return (
                     <tr key={pid}>
-                      <td className="border px-2 py-1">{info.name}</td>
+                      <td className="border px-2 py-1 whitespace-nowrap sticky left-0 bg-white z-10">{info.name}</td>
                       <td className="border px-2 py-1 text-right">{s.AB}</td>
                       <td className="border px-2 py-1 text-right">{s.H}</td>
                       <td className="border px-2 py-1 text-right">{s.AVG}</td>
@@ -834,7 +853,7 @@ const BoxScore = () => (
               </table>
             </div>
 
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={320}>
               <BarChart data={chartData}>
                 <XAxis dataKey="stat" /><YAxis /><Tooltip /><Legend />
                 {compareLive.map((id, i) => {
@@ -844,7 +863,7 @@ const BoxScore = () => (
               </BarChart>
             </ResponsiveContainer>
 
-            <ResponsiveContainer width="100%" height={320}>
+            <ResponsiveContainer width="100%" height={360}>
               <RadarChart data={chartData}>
                 <PolarGrid /><PolarAngleAxis dataKey="stat" /><PolarRadiusAxis />
                 {compareLive.map((id, i) => {
