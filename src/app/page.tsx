@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
 } from "recharts";
+import Image from "next/image";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 /* =========================================================
    共用 class
@@ -162,6 +163,12 @@ function formatIpDisplay(ipRaw: any) {
   // 其餘情況（例：.3 或資料異常），就顯示整數
   return String(Math.round(n));
 }
+function localDateStr(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 
 /* localStorage 寫入（首輪不寫，避免把舊資料覆蓋成空） */
@@ -307,7 +314,8 @@ export default function Home() {
   /* ---------------- Navbar ---------------- */
 const Navbar = () => (
   <div className="w-full sticky top-0 z-10 bg-[#08213A] text-white flex items-center gap-4 px-4 py-2">
-    <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
+    <Image src="/37758.jpg" alt="RS" width={32} height={32}
+  className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
     <div className="font-bold tracking-wide">RS Baseball Manager</div>
     <div className="ml-auto flex gap-2">
       <button onClick={() => setTopTab("players")}  className={`${BTN} ${topTab === "players"  ? "bg-white text-[#08213A]" : "bg-white/10"}`}>球員清單</button>
@@ -339,7 +347,7 @@ const Navbar = () => (
   /* ---------------- 比賽：新增 / 編輯 / 鎖定 ---------------- */
 const addGame = () => {
   const opponent = prompt("對手名稱") || "Unknown";
-  const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD，避免 hydration
+  const date = localDateStr();
   setGames((prev) => [...prev, {
     id: Date.now(),
     date,
@@ -580,7 +588,25 @@ const BoxScore = () => (
         <div key={g.id} className="border rounded p-3 bg-white space-y-4">
           {/* 標題列 + 匯出按鈕 */}
           <div className="flex items-center gap-3">
-            <h3 className="font-semibold">{g.date} vs {g.opponent}</h3>
+            {!g.locked ? (
+  <div className="flex items-center gap-2">
+    <input
+      type="date"
+      value={g.date}
+      onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
+      className="border px-2 py-1 rounded"
+    />
+    <input
+      placeholder="對手"
+      value={g.opponent}
+      onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, opponent: e.target.value } : x))}
+      className="border px-2 py-1 rounded"
+    />
+  </div>
+) : (
+  <h3 className="font-semibold">{g.date} vs {g.opponent}</h3>
+)}
+
             <div className="ml-auto flex gap-2">
               {!g.locked && (
                 <button onClick={() => lockGame(g.id)} className="bg-emerald-600 text-white px-3 py-1 rounded">存檔鎖定</button>
@@ -673,7 +699,7 @@ const BoxScore = () => (
                         {Object.keys(initBatting()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
-                              <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
+                              <input type="number" min={0} className={IN_NUM}
                                 value={toNonNegNum((cur.batting as any)[stat])}
                                 onChange={(e) => updateGameStat(g.id, pid, "batting", stat, toNonNegNum(e.target.value))} />
                             )}
@@ -702,15 +728,16 @@ const BoxScore = () => (
 
   return (
     <td key={stat} className="border px-2 py-1 text-center">
-      {readOnly ? (
-        toNonNegNum(rawValue)
-      ) : isIP ? (
+     {readOnly ? (
+  isIP ? formatIpDisplay(rawValue) : toNonNegNum(rawValue)
+) : isIP ? (
+
         // ---- IP 欄位：step=0.1；輸入中用字串暫存；失焦自動進位 ----
         <input
           type="number"
           min={0}
           step={0.1}
-          className="w-16 border rounded px-1 py-0.5 text-right"
+          className={IN_NUM}
           value={ipDraft[key] ?? String(rawValue ?? "")}
           onChange={(e) => {
             setIpDraft((d) => ({ ...d, [key]: e.target.value }));
@@ -739,7 +766,7 @@ const BoxScore = () => (
                 <input
                   type="number"
                   min={0}
-                  className="w-16 border rounded px-1 py-0.5 text-right"
+                  className={IN_NUM}
                   value={toNonNegNum(rawValue)}
                   onChange={(e) =>
                     updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
@@ -763,7 +790,7 @@ const BoxScore = () => (
                         {Object.keys(initBaserun()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.baserunning as any)[stat]) : (
-                              <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
+                              <input type="number" min={0} className={IN_NUM}
                                 value={toNonNegNum((cur.baserunning as any)[stat])}
                                 onChange={(e) => updateGameStat(g.id, pid, "baserunning", stat, toNonNegNum(e.target.value))} />
                             )}
@@ -783,7 +810,7 @@ const BoxScore = () => (
                         {Object.keys(initFielding()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.fielding as any)[stat]) : (
-                              <input type="number" min={0} className="w-16 border rounded px-1 py-0.5 text-right"
+                              <input type="number" min={0} className={IN_NUM}
                                 value={toNonNegNum((cur.fielding as any)[stat])}
                                 onChange={(e) => updateGameStat(g.id, pid, "fielding", stat, toNonNegNum(e.target.value))} />
                             )}
