@@ -314,15 +314,37 @@ export default function Home() {
   /* ---------------- Navbar ---------------- */
 const Navbar = () => (
   <div className="w-full sticky top-0 z-10 bg-[#08213A] text-white flex items-center gap-4 px-4 py-2">
-    <Image src="/37758.jpg" alt="RS" width={32} height={32}
-  className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
+    <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
     <div className="font-bold tracking-wide">RS Baseball Manager</div>
-    <div className="ml-auto flex gap-2">
-      <button onClick={() => setTopTab("players")}  className={`${BTN} ${topTab === "players"  ? "bg-white text-[#08213A]" : "bg-white/10"}`}>球員清單</button>
-      <button onClick={() => setTopTab("features")} className={`${BTN} ${topTab === "features" ? "bg-white text-[#08213A]" : "bg-white/10"}`}>其他功能</button>
+    <div className="ml-auto flex flex-wrap gap-2">
+      <button
+        onClick={() => setTopTab("players")}
+        className={`${BTN} ${topTab === "players" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
+      >球員清單</button>
+
+      <button
+        onClick={() => { setTopTab("features"); setSubTab("box"); }}
+        className={`${BTN} ${topTab === "features" && subTab === "box" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
+      >比賽紀錄</button>
+
+      <button
+        onClick={() => { setTopTab("features"); setSubTab("career"); }}
+        className={`${BTN} ${topTab === "features" && subTab === "career" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
+      >生涯數據</button>
+
+      <button
+        onClick={() => { setTopTab("features"); setSubTab("compare"); }}
+        className={`${BTN} ${topTab === "features" && subTab === "compare" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
+      >球員對比</button>
+
+      <button
+        onClick={() => { setTopTab("features"); setSubTab("export"); }}
+        className={`${BTN} ${topTab === "features" && subTab === "export" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
+      >匯出</button>
     </div>
   </div>
 );
+
 
   /* ---------------- 新增 / 刪除（含保護） ---------------- */
   const emptyTriple = (): Triple => ({ batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() });
@@ -1076,12 +1098,6 @@ const BoxScore = () => (
         {topTab === "players" && (<><PlayersForm /><PlayersList /></>)}
         {topTab === "features" && (
           <div className="space-y-4">
-            <div className="flex gap-2">
-              <button onClick={() => setSubTab("box")}    className={`px-3 py-1 rounded ${subTab === "box"    ? "bg-blue-600 text-white" : "bg-white"}`}>比賽紀錄（Box Score）</button>
-              <button onClick={() => setSubTab("career")} className={`px-3 py-1 rounded ${subTab === "career" ? "bg-blue-600 text-white" : "bg-white"}`}>生涯數據</button>
-              <button onClick={() => setSubTab("compare")}className={`px-3 py-1 rounded ${subTab === "compare"? "bg-blue-600 text-white" : "bg-white"}`}>球員對比</button>
-              <button onClick={() => setSubTab("export")} className={`px-3 py-1 rounded ${subTab === "export" ? "bg-blue-600 text-white" : "bg-white"}`}>匯出</button>
-            </div>
             {subTab === "box" && <BoxScore />}
             {subTab === "compare" && <Compare />}
             {subTab === "export" && <ExportPanel />}
