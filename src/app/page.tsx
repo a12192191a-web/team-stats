@@ -13,6 +13,9 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 ========================================================= */
 const BTN = "px-3 py-1 md:px-4 md:py-2 rounded";
 const IN_NUM = "w-16 md:w-20 h-9 md:h-10 border rounded px-1.5 text-right";
+// 在 IN_NUM 底下新增
+const IN_NUM_GRID =
+  "min-w-[3rem] w-full h-9 md:h-10 border rounded px-1.5 text-right";
 
 /* =========================================================
    型別 & 初始結構
@@ -721,7 +724,8 @@ const BoxScore = () => (
                         {Object.keys(initBatting()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
-                              <input type="number" min={0} className={IN_NUM}
+                              <input type="number" className={IN_NUM_GRID} 
+
                                 value={toNonNegNum((cur.batting as any)[stat])}
                                 onChange={(e) => updateGameStat(g.id, pid, "batting", stat, toNonNegNum(e.target.value))} />
                             )}
@@ -759,7 +763,7 @@ const BoxScore = () => (
           type="number"
           min={0}
           step={0.1}
-          className={IN_NUM}
+          className={IN_NUM_GRID}
           value={ipDraft[key] ?? String(rawValue ?? "")}
           onChange={(e) => {
             setIpDraft((d) => ({ ...d, [key]: e.target.value }));
@@ -788,7 +792,7 @@ const BoxScore = () => (
                 <input
                   type="number"
                   min={0}
-                  className={IN_NUM}
+                  className={IN_NUM_GRID}
                   value={toNonNegNum(rawValue)}
                   onChange={(e) =>
                     updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
@@ -812,7 +816,7 @@ const BoxScore = () => (
                         {Object.keys(initBaserun()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.baserunning as any)[stat]) : (
-                              <input type="number" min={0} className={IN_NUM}
+                              <input type="number" min={0} className={IN_NUM_GRID}
                                 value={toNonNegNum((cur.baserunning as any)[stat])}
                                 onChange={(e) => updateGameStat(g.id, pid, "baserunning", stat, toNonNegNum(e.target.value))} />
                             )}
@@ -832,7 +836,7 @@ const BoxScore = () => (
                         {Object.keys(initFielding()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.fielding as any)[stat]) : (
-                              <input type="number" min={0} className={IN_NUM}
+                              <input type="number" min={0} className={IN_NUM_GRID}
                                 value={toNonNegNum((cur.fielding as any)[stat])}
                                 onChange={(e) => updateGameStat(g.id, pid, "fielding", stat, toNonNegNum(e.target.value))} />
                             )}
