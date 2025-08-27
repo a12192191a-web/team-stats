@@ -166,6 +166,43 @@ function formatIpDisplay(ipRaw: any) {
   // 其餘情況（例：.3 或資料異常），就顯示整數
   return String(Math.round(n));
 }
+// ===== MLB IP 進位工具：0.1 → 0.2 → 整數（.3 自動進位） =====
+function ipToOutsStrict(ipRaw: any) {
+  const n = Number(ipRaw) || 0;
+  const w = Math.trunc(n);
+  const f = Number((n - w).toFixed(1));
+  let t = 0;
+  if (Math.abs(f - 0.1) < 1e-9) t = 1;
+  else if (Math.abs(f - 0.2) < 1e-9) t = 2;
+  else t = 0;
+  return w * 3 + t;
+}
+function outsToIpStrict(outs: number) {
+  const o = Math.max(0, Math.round(outs) || 0);
+  const w = Math.trunc(o / 3);
+  const r = o % 3; // 0/1/2
+  return Number((w + r / 10).toFixed(1));
+}
+function normalizeIpLike(raw: number) {
+  const T = Math.round(Math.max(0, Number(raw) || 0) * 10);
+  const base = Math.floor(T / 10);
+  const r = ((T % 10) + 10) % 10; // 0..9
+  if (r <= 2) return outsToIpStrict(base * 3 + r);
+  if (r === 3) return outsToIpStrict((base + 1) * 3); // x.3 → (x+1).0
+  if (r === 9) return outsToIpStrict(base * 3 + 2);   // x.9 → x.2
+  if (r === 8) return outsToIpStrict(base * 3 + 1);   // x.8 → x.1
+  if (r === 7) return outsToIpStrict(base * 3 + 0);   // x.7 → x.0
+  return outsToIpStrict(base * 3 + 2);                // 其他夾到 .2
+}
+function stepIpValue(prev: number, rawNext: number) {
+  const prevNum = Number(prev) || 0;
+  const rawNum = Math.max(0, Number(rawNext) || 0);
+  const diffTenth = Math.round((rawNum - prevNum) * 10);
+  if (diffTenth === 1)  return outsToIpStrict(ipToOutsStrict(prevNum) + 1);            // ↑
+  if (diffTenth === -1) return outsToIpStrict(Math.max(0, ipToOutsStrict(prevNum) - 1)); // ↓
+  return normalizeIpLike(rawNum); // 手動輸入容錯
+}
+
 function localDateStr(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -760,34 +797,33 @@ const BoxScore = () => (
 
         // ---- IP 欄位：step=0.1；輸入中用字串暫存；失焦自動進位 ----
         <input
-          type="number"
-          min={0}
-          step={0.1}
-          className={IN_NUM_GRID}
-          value={ipDraft[key] ?? String(rawValue ?? "")}
-          onChange={(e) => {
-            setIpDraft((d) => ({ ...d, [key]: e.target.value }));
-          }}
-          onBlur={() => {
-  const v = ipDraft[key];                         // ← 改 const
-  let num = v === "" || v === "." ? 0 : Number(v);
+  type="number"
+  min={0}
+  step={0.1}
+  className={IN_NUM_GRID}
+  value={ipDraft[key] ?? String(rawValue ?? "")}
+  onChange={(e) => {
+    const prev = Number(ipDraft[key] ?? rawValue ?? 0) || 0;
+    const raw  = parseFloat(e.target.value || "0");
+    const next = stepIpValue(prev, raw);
 
-  // 小數最多到 .3；>= .3 就進位成下一整數
-  const intPart = Math.trunc(num);
-  const fracPart = Number((num - intPart).toFixed(1));
-  if (fracPart >= 0.3 - 1e-9) {
-    num = intPart + 1;
-  }
+    // 先把顯示值變成合法的 0 / 0.1 / 0.2 / 整數
+    setIpDraft((d) => ({ ...d, [key]: String(next) }));
 
-  updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(num));
+    // 如果是按上下箭頭（±0.1），立即寫回資料
+    const diffTenth = Math.round((raw - prev) * 10);
+    if (diffTenth === 1 || diffTenth === -1) {
+      updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(next));
+    }
+  }}
+  onBlur={() => {
+    const v = ipDraft[key];
+    const next = stepIpValue(Number(rawValue || 0), Number(v || "0"));
+    updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(next));
+    setIpDraft((d) => { const { [key]: _, ...rest } = d; return rest; });
+  }}
+/>
 
-  setIpDraft((d) => {
-    const { [key]: _, ...rest } = d;              // 可把 _removed 換成 _
-    return rest;
-  });
-}}
-
-        />
       ) : (
                 <input
                   type="number"
