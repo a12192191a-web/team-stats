@@ -721,7 +721,7 @@ const BoxScore = () => (
         teamE += toNonNegNum(cur.fielding.E);
       });
       const teamR = g.innings.reduce((a, b) => a + toNonNegNum(b), 0);
-      const d = getTextDraft(g);  // ← 新增
+      
 
       return (
         <div key={g.id} className="border rounded p-3 bg-white space-y-4">
@@ -738,74 +738,45 @@ const BoxScore = () => (
 {/* 已有：const d = getTextDraft(g) */}
 
 
+{/* Season */}
 <input
   type="text"
   placeholder="Season"
-  value={d.season}
-  onChange={(e) => setDraft(g.id, { season: (e.target as HTMLInputElement).value })}
-  onBlur={() => commitDraft(g.id)}
-  onCompositionStart={(e) => ((e.target as any).dataset.composing = "1")}
-  onCompositionEnd={(e) => ((e.target as any).dataset.composing = "")}
-  onKeyDown={(e) => {
-    const ne = (e.nativeEvent as any);
-    if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229 || (e.target as any).dataset?.composing)) {
-      (e.target as HTMLInputElement).blur();
-    }
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-  onMouseDown={(e) => e.stopPropagation()}
-  onTouchStart={(e) => e.stopPropagation()}
-  autoComplete="off"
-  autoCorrect="off"
-  spellCheck={false}
+  value={g.season ?? ""}
+  onChange={(e) =>
+    setGames(prev =>
+      prev.map(x => x.id === g.id ? { ...x, season: e.target.value } : x)
+    )
+  }
   className="border px-2 py-1 rounded"
 />
 
+{/* Tag */}
 <input
   type="text"
   placeholder="Tag"
-  value={d.tag}
-  onChange={(e) => setDraft(g.id, { tag: (e.target as HTMLInputElement).value })}
-  onBlur={() => commitDraft(g.id)}
-  onCompositionStart={(e) => ((e.target as any).dataset.composing = "1")}
-  onCompositionEnd={(e) => ((e.target as any).dataset.composing = "")}
-  onKeyDown={(e) => {
-    const ne = (e.nativeEvent as any);
-    if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229 || (e.target as any).dataset?.composing)) {
-      (e.target as HTMLInputElement).blur();
-    }
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-  onMouseDown={(e) => e.stopPropagation()}
-  onTouchStart={(e) => e.stopPropagation()}
-  autoComplete="off"
-  autoCorrect="off"
-  spellCheck={false}
+  value={g.tag ?? ""}
+  onChange={(e) =>
+    setGames(prev =>
+      prev.map(x => x.id === g.id ? { ...x, tag: e.target.value } : x)
+    )
+  }
   className="border px-2 py-1 rounded"
 />
 
+{/* 對手 */}
 <input
   type="text"
   placeholder="對手"
-  value={d.opponent}
-  onChange={(e) => setDraft(g.id, { opponent: (e.target as HTMLInputElement).value })}
-  onBlur={() => commitDraft(g.id)}
-  onCompositionStart={(e) => ((e.target as any).dataset.composing = "1")}
-  onCompositionEnd={(e) => ((e.target as any).dataset.composing = "")}
-  onKeyDown={(e) => {
-    const ne = (e.nativeEvent as any);
-    if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229 || (e.target as any).dataset?.composing)) {
-      (e.target as HTMLInputElement).blur();
-    }
-  }}
-  onPointerDown={(e) => e.stopPropagation()}
-  onMouseDown={(e) => e.stopPropagation()}
-  onTouchStart={(e) => e.stopPropagation()}
-  autoComplete="off"
-  autoCorrect="off"
-  spellCheck={false}
+  value={g.opponent}
+  onChange={(e) =>
+    setGames(prev =>
+      prev.map(x => x.id === g.id ? { ...x, opponent: e.target.value } : x)
+    )
+  }
   className="border px-2 py-1 rounded"
 />
+
 
 
 
