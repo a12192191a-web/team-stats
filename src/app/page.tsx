@@ -1201,6 +1201,60 @@ const BoxScore = () => (
       </div>
     );
   };
+// --- 趨勢圖分頁（放在 Compare 後、ExportPanel 前） ---
+type TrendTabProps = { games: Game[] };
+
+const TrendTab: React.FC<TrendTabProps> = ({ games }) => {
+  const data = useMemo(() => {
+    return games.map((g) => {
+      // 全隊合計：一場的 OPS / ERA
+      let _1B=0,_2B=0,_3B=0,HR=0,BB=0,HBP=0,SF=0,SH=0,GO=0,FO=0,SO=0;
+      let ER=0, OUTS=0;
+
+      Object.values(g.stats).forEach((t) => {
+        const b = t.batting, p = t.pitching;
+        if (b) {
+          _1B += b["1B"]||0; _2B += b["2B"]||0; _3B += b["3B"]||0; HR += b.HR||0;
+          BB += b.BB||0; HBP += b.HBP||0; SF += b.SF||0; SH += b.SH||0;
+          GO += b.GO||0; FO += b.FO||0; SO += b.SO||0;
+        }
+        if (p) {
+          ER += p.ER||0;
+          OUTS += Math.floor((p.IP||0))*3 + Math.round(((p.IP||0)%1)*10);
+        }
+      });
+
+      const H  = _1B + _2B + _3B + HR;
+      const TB = _1B + 2*_2B + 3*_3B + 4*HR;
+      const AB = H + GO + FO + SO;
+      const PA = AB + BB + HBP + SF + SH;
+      const OBP = PA>0 ? (H+BB+HBP)/(PA-SH) : 0;
+      const SLG = AB>0 ? TB/AB : 0;
+      const OPS = Number((OBP + SLG).toFixed(3));
+      const IP  = OUTS/3;
+      const ERA = IP>0 ? Number(((ER*9)/IP).toFixed(2)) : 0;
+
+      const d = new Date(g.date);
+      const mm = d.getMonth()+1, dd = d.getDate();
+      return { game: `${mm}/${dd} vs ${g.opponent||"-"}`, OPS, ERA };
+    });
+  }, [games]);
+
+  return (
+    <div className="w-full h-80 md:h-96">
+      <ResponsiveContainer>
+        <LineChart data={data}>
+          <XAxis dataKey="game" tick={false} />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Line type="monotone" dataKey="OPS" dot={false} strokeWidth={2} />
+          <Line type="monotone" dataKey="ERA" dot={false} strokeWidth={2} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
 
   /* ---------------- Export / Career / Cloud ---------------- */
   const ExportPanel = () => (
@@ -1305,9 +1359,10 @@ const BoxScore = () => (
           <div className="space-y-4">
            {subTab === "box" && <BoxScore />}
 {subTab === "compare" && <Compare />}
-{subTab === "trend" && <TrendTab />}
+{subTab === "trend" && <TrendTab games={games} />}
 {subTab === "export" && <ExportPanel />}
-/* Career 已在這裡 */
+{ /* Career 已在這裡 */ }
+
 {subTab === "career" && <CareerPanel />}
 
           </div>
