@@ -1323,21 +1323,74 @@ const TrendTab: React.FC<TrendTabProps> = ({ games }) => {
 
       {/* 表格（用 careerByPlayer 計算 calcStats） */}
       <div className="overflow-x-auto">
-        <table className="border text-sm w-full bg-white">
-          <thead>...</thead>
-          <tbody>
-            {players.map(p => {
-              const triple = careerByPlayer.get(p.id) ?? emptyTriple();
-              const s = calcStats(triple.batting, triple.pitching, triple.fielding, triple.baserunning);
-              return (
-                <tr key={p.id}>
-                  <td className="border px-2 py-1 whitespace-nowrap">{p.name}</td>
-                  {/* 其他欄位照原本 Career 表格呈現 */}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        {/* 表格（用 careerByPlayer 計算 calcStats） */}
+<div className="overflow-x-auto">
+  <table className="border text-xs w-full bg-white">
+    <thead>
+      <tr>
+        <th className="border px-2 py-1">球員</th>
+        <th className="border px-2 py-1">AB</th><th className="border px-2 py-1">H</th>
+        <th className="border px-2 py-1">AVG</th><th className="border px-2 py-1">OBP</th><th className="border px-2 py-1">SLG</th><th className="border px-2 py-1">OPS</th>
+        <th className="border px-2 py-1">R</th><th className="border px-2 py-1">RBI</th><th className="border px-2 py-1">SH</th>
+        <th className="border px-2 py-1">TB</th><th className="border px-2 py-1">TOB</th><th className="border px-2 py-1">RC</th><th className="border px-2 py-1">BB/K</th>
+        <th className="border px-2 py-1">SB</th><th className="border px-2 py-1">CS</th><th className="border px-2 py-1">SB%</th>
+        <th className="border px-2 py-1">ERA</th><th className="border px-2 py-1">WHIP</th><th className="border px-2 py-1">K/9</th><th className="border px-2 py-1">BB/9</th>
+        <th className="border px-2 py-1">H/9</th><th className="border px-2 py-1">K/BB</th><th className="border px-2 py-1">FIP</th><th className="border px-2 py-1">OBA</th><th className="border px-2 py-1">PC</th>
+        <th className="border px-2 py-1">FPCT</th>
+      </tr>
+    </thead>
+    <tbody>
+      {players.map((p) => {
+        // 從篩選後的比賽累加
+        const fromGames = careerByPlayer.get(p.id) ?? emptyTriple();
+
+        // 沒有任何場次數據 → 回退用 players 舊生涯（避免整列全 0）
+        const sumTriple = (t: Triple) =>
+          Object.values(t.batting).reduce((a,b)=>a+Number(b||0),0) +
+          Object.values(t.pitching).reduce((a,b)=>a+Number(b||0),0) +
+          Object.values(t.fielding).reduce((a,b)=>a+Number(b||0),0) +
+          Object.values(t.baserunning).reduce((a,b)=>a+Number(b||0),0);
+        const triple = sumTriple(fromGames) === 0
+          ? { batting: p.batting, pitching: p.pitching, fielding: p.fielding, baserunning: p.baserunning }
+          : fromGames;
+
+        const s = calcStats(triple.batting, triple.pitching, triple.fielding, triple.baserunning);
+
+        return (
+          <tr key={p.id}>
+            <td className="border px-2 py-1 whitespace-nowrap">{p.name}</td>
+            <td className="border px-2 py-1 text-right">{s.AB}</td>
+            <td className="border px-2 py-1 text-right">{s.H}</td>
+            <td className="border px-2 py-1 text-right">{s.AVG}</td>
+            <td className="border px-2 py-1 text-right">{s.OBP}</td>
+            <td className="border px-2 py-1 text-right">{s.SLG}</td>
+            <td className="border px-2 py-1 text-right">{s.OPS}</td>
+            <td className="border px-2 py-1 text-right">{s.R}</td>
+            <td className="border px-2 py-1 text-right">{s.RBI}</td>
+            <td className="border px-2 py-1 text-right">{s.SH}</td>
+            <td className="border px-2 py-1 text-right">{s.TB}</td>
+            <td className="border px-2 py-1 text-right">{s.TOB}</td>
+            <td className="border px-2 py-1 text-right">{s.RC}</td>
+            <td className="border px-2 py-1 text-right">{s.BBK}</td>
+            <td className="border px-2 py-1 text-right">{s.SB}</td>
+            <td className="border px-2 py-1 text-right">{s.CS}</td>
+            <td className="border px-2 py-1 text-right">{s.SBP}</td>
+            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.ERA  : "-"}</td>
+            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.WHIP : "-"}</td>
+            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.K9   : "-"}</td>
+            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.BB9  : "-"}</td>
+            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.H9   : "-"}</td>
+            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.KBB  : "-"}</td>
+            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.FIP  : "-"}</td>
+            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.OBA  : "-"}</td>
+            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.PC   : "-"}</td>
+            <td className="border px-2 py-1 text-right">{s.FPCT}</td>
+          </tr>
+        );
+      })}
+    </tbody>
+  </table>
+</div>
       </div>
     </div>
   );
