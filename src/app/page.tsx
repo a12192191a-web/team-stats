@@ -712,6 +712,8 @@ const BoxScore = () => (
       onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
       className="border px-2 py-1 rounded"
     />
+    <input value={g.season||""} onChange={e=>setGames(p=>p.map(x=>x.id===g.id?{...x,season:e.target.value}:x))} className="border px-2 py-1 rounded" placeholder="Season"/>
+<input value={g.tag||""}    onChange={e=>setGames(p=>p.map(x=>x.id===g.id?{...x,tag:e.target.value}:x))} className="border px-2 py-1 rounded" placeholder="Tag"/>
     <input
       placeholder="對手"
       value={g.opponent}
