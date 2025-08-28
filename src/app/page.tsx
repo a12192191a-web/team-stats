@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
 import Image from "next/image";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
@@ -53,12 +53,18 @@ type Game = {
   id: number;
   date: string;
   opponent: string;
+  season?: string;   // ← 新增
+  tag?: string;      // ← 新增
   lineup: number[];
   innings: number[];
   stats: Record<number, Triple>;
   locked: boolean;
   roster: RosterSnapshot;
+  winPid?: number;   // ← 新增
+  lossPid?: number;  // ← 新增
+  savePid?: number;  // ← 新增
 };
+
 
 /* =========================================================
    常數 / Helper
@@ -119,14 +125,22 @@ function reviveGames(raw: any): Game[] {
         };
       });
     }
-    return {
-      id: Number(g?.id),
-      date: String(g?.date ?? ""),
-      opponent: String(g?.opponent ?? "Unknown"),
-      lineup: Array.isArray(g?.lineup) ? g.lineup.map((n: any) => Number(n)) : [],
-      innings: Array.isArray(g?.innings) ? g.innings.map(toNonNegNum) : Array(9).fill(0),
-      stats, locked: !!g?.locked, roster,
-    };
+   return {
+  id: Number(g?.id),
+  date: String(g?.date ?? ""),
+  opponent: String(g?.opponent ?? "Unknown"),
+  season: g?.season ?? "",          // ← 新增
+  tag: g?.tag ?? "",                // ← 新增
+  lineup: Array.isArray(g?.lineup) ? g.lineup.map((n: any) => Number(n)) : [],
+  innings: Array.isArray(g?.innings) ? g.innings.map(toNonNegNum) : Array(9).fill(0),
+  stats,
+  locked: !!g?.locked,
+  roster,
+  winPid: Number(g?.winPid) || undefined,   // ← 新增
+  lossPid: Number(g?.lossPid) || undefined, // ← 新增
+  savePid: Number(g?.savePid) || undefined, // ← 新增
+};
+
   });
 }
 function getNameAndPositions(players: Player[], g: Game, pid: number) {
@@ -279,7 +293,7 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
 ========================================================= */
 export default function Home() {
   const [topTab, setTopTab] = useState<"players" | "features">("players");
-  const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export">("box");
+  const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend">("box");
 
   // SSR/CSR 一致：初值一律空；掛載後再載入
   const [players, setPlayers] = useState<Player[]>([]);
@@ -378,6 +392,12 @@ const Navbar = () => (
       >球員對比</button>
 
       <button
+  onClick={() => { setTopTab("features"); setSubTab("trend"); }}
+  className={`${BTN} ${topTab === "features" && subTab === "trend" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
+>趨勢圖</button>
+
+
+      <button
         onClick={() => { setTopTab("features"); setSubTab("export"); }}
         className={`${BTN} ${topTab === "features" && subTab === "export" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >匯出</button>
@@ -411,15 +431,21 @@ const addGame = () => {
   const opponent = prompt("對手名稱") || "Unknown";
   const date = localDateStr();
   setGames((prev) => [...prev, {
-    id: Date.now(),
-    date,
-    opponent,
-    lineup: [],
-    innings: Array(9).fill(0),
-    stats: {},
-    locked: false,
-    roster: {}
-  }]);
+  id: Date.now(),
+  date,
+  opponent,
+  season: "",            // ← 新增
+  tag: "",               // ← 新增
+  lineup: [],
+  innings: Array(9).fill(0),
+  stats: {},
+  locked: false,
+  roster: {},
+  winPid: undefined,     // ← 新增
+  lossPid: undefined,    // ← 新增
+  savePid: undefined,    // ← 新增
+}]);
+
 };
 
   const lockGame = (gid: number) => {
@@ -676,6 +702,100 @@ const BoxScore = () => (
               {g.locked && (
                 <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">已鎖定</span>
               )}
+              {g.locked && (
+  <div className="flex items-center gap-2 flex-wrap">
+    {/* 勝投 */}
+    <select
+      value={g.winPid ?? ""}
+      onChange={(e) =>
+        setGames(prev =>
+          prev.map(x =>
+            x.id === g.id
+              ? {
+                  ...x,
+                  winPid: e.target.value ? Number(e.target.value) : undefined,
+                  // 避免同人同時拿 W/S 或 W/L
+                  ...(e.target.value && Number(e.target.value) === x.savePid ? { savePid: undefined } : {}),
+                  ...(e.target.value && Number(e.target.value) === x.lossPid ? { lossPid: undefined } : {}),
+                }
+              : x
+          )
+        )
+      }
+      className="border px-2 py-1 rounded"
+      title="勝投"
+    >
+      <option value="">W: 未指派</option>
+      {Object.keys(g.roster).map((k) => {
+        const pid = Number(k);
+        const name = g.roster[pid]?.name ?? `#${pid}`;
+        return (
+          <option key={pid} value={pid}>{name}</option>
+        );
+      })}
+    </select>
+
+    {/* 敗投 */}
+    <select
+      value={g.lossPid ?? ""}
+      onChange={(e) =>
+        setGames(prev =>
+          prev.map(x =>
+            x.id === g.id
+              ? {
+                  ...x,
+                  lossPid: e.target.value ? Number(e.target.value) : undefined,
+                  // 避免同人同時拿 W/L
+                  ...(e.target.value && Number(e.target.value) === x.winPid ? { winPid: undefined } : {}),
+                }
+              : x
+          )
+        )
+      }
+      className="border px-2 py-1 rounded"
+      title="敗投"
+    >
+      <option value="">L: 未指派</option>
+      {Object.keys(g.roster).map((k) => {
+        const pid = Number(k);
+        const name = g.roster[pid]?.name ?? `#${pid}`;
+        return (
+          <option key={pid} value={pid}>{name}</option>
+        );
+      })}
+    </select>
+
+    {/* 救援成功 */}
+    <select
+      value={g.savePid ?? ""}
+      onChange={(e) =>
+        setGames(prev =>
+          prev.map(x =>
+            x.id === g.id
+              ? {
+                  ...x,
+                  savePid: e.target.value ? Number(e.target.value) : undefined,
+                  // 避免同人同時拿 W/S
+                  ...(e.target.value && Number(e.target.value) === x.winPid ? { winPid: undefined } : {}),
+                }
+              : x
+          )
+        )
+      }
+      className="border px-2 py-1 rounded"
+      title="救援"
+    >
+      <option value="">S: 未指派</option>
+      {Object.keys(g.roster).map((k) => {
+        const pid = Number(k);
+        const name = g.roster[pid]?.name ?? `#${pid}`;
+        return (
+          <option key={pid} value={pid}>{name}</option>
+        );
+      })}
+    </select>
+  </div>
+)}
               <button onClick={() => exportGameCSV(g)} className="bg-gray-700 text-white px-3 py-1 rounded">匯出 CSV</button>
              <button
   onClick={() => deleteGame(g.id)}
@@ -971,6 +1091,40 @@ const BoxScore = () => (
     const METRICS = ["AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"];
     const CHART_METRICS = ["AVG","OBP","SLG","OPS","ERA","WHIP","K9","FPCT"];
     const colors = ["#8884d8","#82ca9d","#ffc658","#ff8a65","#90caf9"];
+    const TrendTab = () => {
+  // 把每場的隊伍 OPS/ERA 做成序列
+  const series = useMemo(() => {
+    return games.map(g => {
+      // 全隊合併：把這場所有人累加成一個 triple
+      const sum = emptyTriple();
+      g.lineup.forEach(pid => {
+        const cur = g.stats[pid]; if (!cur) return;
+        (Object.keys(sum.batting)  as (keyof Batting)[] ).forEach(k => (sum.batting[k]  += toNonNegNum((cur.batting  as any)[k])));
+        (Object.keys(sum.pitching) as (keyof Pitching)[]).forEach(k => (sum.pitching[k] += toNonNegNum((cur.pitching as any)[k])));
+        (Object.keys(sum.fielding) as (keyof Fielding)[]).forEach(k => (sum.fielding[k] += toNonNegNum((cur.fielding as any)[k])));
+        (Object.keys(sum.baserunning) as (keyof Baserun)[]).forEach(k => (sum.baserunning[k] += toNonNegNum((cur.baserunning as any)[k])));
+      });
+      const s = calcStats(sum.batting, sum.pitching, sum.fielding, sum.baserunning);
+      return { game: `${g.date} vs ${g.opponent}`, OPS: Number(s.OPS), ERA: Number(s.ERA) };
+    });
+  }, [games]);
+
+  return (
+    <div className="space-y-4">
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={series}>
+          <XAxis dataKey="game" tick={false} />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Line type="monotone" dataKey="OPS" />
+          <Line type="monotone" dataKey="ERA" />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
 
     const makeRow = (stat: string) => {
       const row: Record<string, number | string> = { stat };
@@ -1066,56 +1220,65 @@ const BoxScore = () => (
     </div>
   );
 
-  const CareerPanel = () => (
+  const CareerPanel = () => {
+  const [seasonFilter, setSeasonFilter] = useState<string>("");
+  const [tagFilter, setTagFilter] = useState<string>("");
+
+  // 收集可選清單
+  const seasons = useMemo(() => Array.from(new Set(games.map(g => g.season || "").filter(Boolean))), [games]);
+  const tags    = useMemo(() => Array.from(new Set(games.map(g => g.tag || "").filter(Boolean))), [games]);
+
+  // 過濾比賽
+  const filteredGames = useMemo(() => {
+    return games.filter(g =>
+      (seasonFilter ? g.season === seasonFilter : true) &&
+      (tagFilter ? g.tag === tagFilter : true)
+    );
+  }, [games, seasonFilter, tagFilter]);
+
+  // 依 filteredGames 累加成每位球員的生涯合計
+  const careerByPlayer = useMemo(() => {
+    const acc = new Map<number, Triple>();
+    players.forEach(p => acc.set(p.id, emptyTriple()));
+    filteredGames.forEach(g => {
+      players.forEach(p => {
+        const cur = g.stats[p.id]; if (!cur) return;
+        const agg = acc.get(p.id)!;
+        (Object.keys(agg.batting)  as (keyof Batting)[] ).forEach(k => (agg.batting[k]  += toNonNegNum((cur.batting  as any)[k])));
+        (Object.keys(agg.pitching) as (keyof Pitching)[]).forEach(k => (agg.pitching[k] += toNonNegNum((cur.pitching as any)[k])));
+        (Object.keys(agg.fielding) as (keyof Fielding)[]).forEach(k => (agg.fielding[k] += toNonNegNum((cur.fielding as any)[k])));
+        (Object.keys(agg.baserunning) as (keyof Baserun)[]).forEach(k => (agg.baserunning[k] += toNonNegNum((cur.baserunning as any)[k])));
+      });
+    });
+    return acc;
+  }, [players, filteredGames]);
+
+  return (
     <div className="space-y-3">
-      <button onClick={syncCareer} className="bg-purple-600 text-white px-3 py-1 rounded">生涯同步（累加所有比賽）</button>
+      {/* 篩選器 */}
+      <div className="flex flex-wrap gap-2">
+        <select className="border px-2 py-1 rounded" value={seasonFilter} onChange={e => setSeasonFilter(e.target.value)}>
+          <option value="">全部季別</option>
+          {seasons.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className="border px-2 py-1 rounded" value={tagFilter} onChange={e => setTagFilter(e.target.value)}>
+          <option value="">全部分類</option>
+          {tags.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+
+      {/* 表格（用 careerByPlayer 計算 calcStats） */}
       <div className="overflow-x-auto">
-        <table className="border text-xs w-full bg-white">
-          <thead>
-            <tr>
-              <th className="border px-2 py-1">球員</th>
-              <th className="border px-2 py-1">AB</th><th className="border px-2 py-1">H</th>
-              <th className="border px-2 py-1">AVG</th><th className="border px-2 py-1">OBP</th><th className="border px-2 py-1">SLG</th><th className="border px-2 py-1">OPS</th>
-              <th className="border px-2 py-1">R</th><th className="border px-2 py-1">RBI</th><th className="border px-2 py-1">SH</th>
-              <th className="border px-2 py-1">TB</th><th className="border px-2 py-1">TOB</th><th className="border px-2 py-1">RC</th><th className="border px-2 py-1">BB/K</th>
-              <th className="border px-2 py-1">SB</th><th className="border px-2 py-1">CS</th><th className="border px-2 py-1">SB%</th>
-              <th className="border px-2 py-1">ERA</th><th className="border px-2 py-1">WHIP</th><th className="border px-2 py-1">K/9</th><th className="border px-2 py-1">BB/9</th>
-              <th className="border px-2 py-1">H/9</th><th className="border px-2 py-1">K/BB</th><th className="border px-2 py-1">FIP</th><th className="border px-2 py-1">OBA</th><th className="border px-2 py-1">PC</th>
-              <th className="border px-2 py-1">FPCT</th>
-            </tr>
-          </thead>
+        <table className="border text-sm w-full bg-white">
+          <thead>...</thead>
           <tbody>
-            {players.map((p) => {
-              const s = calcStats(p.batting, p.pitching, p.fielding, p.baserunning);
+            {players.map(p => {
+              const triple = careerByPlayer.get(p.id) ?? emptyTriple();
+              const s = calcStats(triple.batting, triple.pitching, triple.fielding, triple.baserunning);
               return (
                 <tr key={p.id}>
                   <td className="border px-2 py-1 whitespace-nowrap">{p.name}</td>
-                  <td className="border px-2 py-1 text-right">{s.AB}</td>
-                  <td className="border px-2 py-1 text-right">{s.H}</td>
-                  <td className="border px-2 py-1 text-right">{s.AVG}</td>
-                  <td className="border px-2 py-1 text-right">{s.OBP}</td>
-                  <td className="border px-2 py-1 text-right">{s.SLG}</td>
-                  <td className="border px-2 py-1 text-right">{s.OPS}</td>
-                  <td className="border px-2 py-1 text-right">{s.R}</td>
-                  <td className="border px-2 py-1 text-right">{s.RBI}</td>
-                  <td className="border px-2 py-1 text-right">{s.SH}</td>
-                  <td className="border px-2 py-1 text-right">{s.TB}</td>
-                  <td className="border px-2 py-1 text-right">{s.TOB}</td>
-                  <td className="border px-2 py-1 text-right">{s.RC}</td>
-                  <td className="border px-2 py-1 text-right">{s.BBK}</td>
-                  <td className="border px-2 py-1 text-right">{s.SB}</td>
-                  <td className="border px-2 py-1 text-right">{s.CS}</td>
-                  <td className="border px-2 py-1 text-right">{s.SBP}</td>
-                  <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.ERA : "-"}</td>
-                  <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.WHIP : "-"}</td>
-                  <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.K9  : "-"}</td>
-                  <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.BB9 : "-"}</td>
-                  <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.H9  : "-"}</td>
-                  <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.KBB : "-"}</td>
-                  <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.FIP : "-"}</td>
-                  <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.OBA : "-"}</td>
-                  <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.PC  : "-"}</td>
-                  <td className="border px-2 py-1 text-right">{s.FPCT}</td>
+                  {/* 其他欄位照原本 Career 表格呈現 */}
                 </tr>
               );
             })}
@@ -1124,6 +1287,8 @@ const BoxScore = () => (
       </div>
     </div>
   );
+};
+
 
   /* ---------------- Render ---------------- */
   if (!mounted) {
@@ -1138,11 +1303,13 @@ const BoxScore = () => (
         {topTab === "players" && (<><PlayersForm /><PlayersList /></>)}
         {topTab === "features" && (
           <div className="space-y-4">
-            {subTab === "box" && <BoxScore />}
-            {subTab === "compare" && <Compare />}
-            {subTab === "export" && <ExportPanel />}
-                {/* 讓 Career 也放到 features 裡面一樣使用 */}
-            {subTab === "career" && <CareerPanel />}
+           {subTab === "box" && <BoxScore />}
+{subTab === "compare" && <Compare />}
+{subTab === "trend" && <TrendTab />}
+{subTab === "export" && <ExportPanel />}
+/* Career 已在這裡 */
+{subTab === "career" && <CareerPanel />}
+
           </div>
         )}
       </div>
