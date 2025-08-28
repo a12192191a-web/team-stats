@@ -449,17 +449,45 @@ const addGame = () => {
 };
 
   const lockGame = (gid: number) => {
-    if (!confirm("存檔後將無法再編輯此場比賽，確定存檔？")) return;
-    setGames((prev) => prev.map((g) => {
-      if (g.id !== gid) return g;
-      const snap: RosterSnapshot = {};
-      g.lineup.forEach((pid) => {
-        const info = getNameAndPositions(players, g, pid);
-        snap[pid] = { name: info.name, positions: info.positions };
-      });
-      return { ...g, locked: true, roster: snap };
-    }));
-  };
+  if (!confirm("存檔後將無法再編輯此場比賽，確定存檔？")) return;
+
+  setGames((prev) => prev.map((g) => {
+    if (g.id !== gid) return g;
+
+    // 1) 先把目前輸入框的 IP 草稿寫回 stats
+    const stats: Record<number, Triple> = { ...g.stats };
+    g.lineup.forEach((pid) => {
+      const key = `${g.id}:${pid}`;
+      const draft = ipDraft[key];
+      if (draft !== undefined && draft !== "") {
+        const prevTriple = stats[pid] ?? emptyTriple();
+        const rawValue = (prevTriple.pitching as any).IP ?? 0;
+        const next = stepIpValue(Number(rawValue || 0), Number(draft || "0"));
+        stats[pid] = {
+          ...prevTriple,
+          pitching: { ...prevTriple.pitching, IP: toNonNegNum(next) },
+        };
+      }
+    });
+
+    // 2) 建立名單快照，鎖定
+    const snap: RosterSnapshot = {};
+    g.lineup.forEach((pid) => {
+      const info = getNameAndPositions(players, g, pid);
+      snap[pid] = { name: info.name, positions: info.positions };
+    });
+
+    return { ...g, stats, locked: true, roster: snap };
+  }));
+
+  // 3) 清掉這場比賽的 ipDraft
+  setIpDraft((d) => {
+    const nd = { ...d };
+    Object.keys(nd).forEach((k) => { if (k.startsWith(`${gid}:`)) delete nd[k]; });
+    return nd;
+  });
+};
+
   // ⭐ 新增：刪除比賽
   const deleteGame = (gid: number) => {
     const g = games.find(x => x.id === gid);
@@ -912,7 +940,7 @@ const BoxScore = () => (
   return (
     <td key={stat} className="border px-2 py-1 text-center">
      {readOnly ? (
-  isIP ? formatIpDisplay(rawValue) : toNonNegNum(rawValue)
+ isIP ? formatIpDisplay(ipToInnings(rawValue)) : toNonNegNum(rawValue)
 ) : isIP ? (
 
         // ---- IP 欄位：step=0.1；輸入中用字串暫存；失焦自動進位 ----
