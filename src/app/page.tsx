@@ -735,7 +735,8 @@ const BoxScore = () => (
       onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
       className="border px-2 py-1 rounded"
     />
-// 已有：const d = getTextDraft(g)
+{/* 已有：const d = getTextDraft(g) */}
+
 
 <input
   type="text"
@@ -1033,8 +1034,7 @@ const BoxScore = () => (
  isIP ? formatIpDisplay(ipToInnings(rawValue)) : toNonNegNum(rawValue)
 ) : isIP ? (
 
-        // ---- IP 欄位：step=0.1；輸入中用字串暫存；失焦自動進位 ----
-        <input
+<input
   type="number"
   min={0}
   step={0.1}
