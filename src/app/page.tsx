@@ -294,6 +294,20 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
 export default function Home() {
   const [topTab, setTopTab] = useState<"players" | "features">("players");
   const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend">("box");
+  const [textDraft, setTextDraft] = useState<
+  Record<number, { season: string; tag: string; opponent: string }>
+>({});
+
+const getTextDraft = (g: Game) =>
+  textDraft[g.id] ?? { season: g.season ?? "", tag: g.tag ?? "", opponent: g.opponent ?? "" };
+
+const setDraft = (gid: number, patch: Partial<{season:string; tag:string; opponent:string}>) =>
+  setTextDraft(d => ({ ...d, [gid]: { ...(d[gid] || {}), ...patch } }));
+
+const commitDraft = (gid: number) => {
+  const d = textDraft[gid]; if (!d) return;
+  setGames(prev => prev.map(x => x.id === gid ? { ...x, season: d.season, tag: d.tag, opponent: d.opponent } : x));
+};
 
   // SSR/CSR 一致：初值一律空；掛載後再載入
   const [players, setPlayers] = useState<Player[]>([]);
@@ -449,6 +463,7 @@ const addGame = () => {
 };
 
   const lockGame = (gid: number) => {
+    commitDraft(gid); // ← 加這行
   if (!confirm("存檔後將無法再編輯此場比賽，確定存檔？")) return;
 
   setGames((prev) => prev.map((g) => {
@@ -699,6 +714,7 @@ const BoxScore = () => (
         teamE += toNonNegNum(cur.fielding.E);
       });
       const teamR = g.innings.reduce((a, b) => a + toNonNegNum(b), 0);
+      const d = getTextDraft(g);  // ← 新增
 
       return (
         <div key={g.id} className="border rounded p-3 bg-white space-y-4">
@@ -712,14 +728,34 @@ const BoxScore = () => (
       onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
       className="border px-2 py-1 rounded"
     />
-    <input value={g.season||""} onChange={e=>setGames(p=>p.map(x=>x.id===g.id?{...x,season:e.target.value}:x))} className="border px-2 py-1 rounded" placeholder="Season"/>
-<input value={g.tag||""}    onChange={e=>setGames(p=>p.map(x=>x.id===g.id?{...x,tag:e.target.value}:x))} className="border px-2 py-1 rounded" placeholder="Tag"/>
     <input
-      placeholder="對手"
-      value={g.opponent}
-      onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, opponent: e.target.value } : x))}
-      className="border px-2 py-1 rounded"
-    />
+  type="text"
+  placeholder="Season"
+  value={d.season}
+  onChange={(e) => setDraft(g.id, { season: e.target.value })}
+  onBlur={() => commitDraft(g.id)}
+  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+  className="border px-2 py-1 rounded"
+/>
+<input
+  type="text"
+  placeholder="Tag"
+  value={d.tag}
+  onChange={(e) => setDraft(g.id, { tag: e.target.value })}
+  onBlur={() => commitDraft(g.id)}
+  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+  className="border px-2 py-1 rounded"
+/>
+<input
+  type="text"
+  placeholder="對手"
+  value={d.opponent}
+  onChange={(e) => setDraft(g.id, { opponent: e.target.value })}
+  onBlur={() => commitDraft(g.id)}
+  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+  className="border px-2 py-1 rounded"
+/>
+
   </div>
 ) : (
   <h3 className="font-semibold">{g.date} vs {g.opponent}</h3>
