@@ -735,18 +735,19 @@ const BoxScore = () => (
       onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
       className="border px-2 py-1 rounded"
     />
-{/* Season（非受控 + IME 安全 + 阻擋 DnD 事件） */}
+// 已有：const d = getTextDraft(g)
+
 <input
   type="text"
   placeholder="Season"
-  defaultValue={g.season ?? ""}
-  onInput={(e) => setDraft(g.id, { season: (e.target as HTMLInputElement).value })}
+  value={d.season}
+  onChange={(e) => setDraft(g.id, { season: (e.target as HTMLInputElement).value })}
   onBlur={() => commitDraft(g.id)}
   onCompositionStart={(e) => ((e.target as any).dataset.composing = "1")}
   onCompositionEnd={(e) => ((e.target as any).dataset.composing = "")}
   onKeyDown={(e) => {
     const ne = (e.nativeEvent as any);
-    if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229 || (e.target as any).dataset.composing)) {
+    if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229 || (e.target as any).dataset?.composing)) {
       (e.target as HTMLInputElement).blur();
     }
   }}
@@ -759,18 +760,17 @@ const BoxScore = () => (
   className="border px-2 py-1 rounded"
 />
 
-{/* Tag（同上） */}
 <input
   type="text"
   placeholder="Tag"
-  defaultValue={g.tag ?? ""}
-  onInput={(e) => setDraft(g.id, { tag: (e.target as HTMLInputElement).value })}
+  value={d.tag}
+  onChange={(e) => setDraft(g.id, { tag: (e.target as HTMLInputElement).value })}
   onBlur={() => commitDraft(g.id)}
   onCompositionStart={(e) => ((e.target as any).dataset.composing = "1")}
   onCompositionEnd={(e) => ((e.target as any).dataset.composing = "")}
   onKeyDown={(e) => {
     const ne = (e.nativeEvent as any);
-    if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229 || (e.target as any).dataset.composing)) {
+    if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229 || (e.target as any).dataset?.composing)) {
       (e.target as HTMLInputElement).blur();
     }
   }}
@@ -783,18 +783,17 @@ const BoxScore = () => (
   className="border px-2 py-1 rounded"
 />
 
-{/* 對手（同上） */}
 <input
   type="text"
   placeholder="對手"
-  defaultValue={g.opponent ?? ""}
-  onInput={(e) => setDraft(g.id, { opponent: (e.target as HTMLInputElement).value })}
+  value={d.opponent}
+  onChange={(e) => setDraft(g.id, { opponent: (e.target as HTMLInputElement).value })}
   onBlur={() => commitDraft(g.id)}
   onCompositionStart={(e) => ((e.target as any).dataset.composing = "1")}
   onCompositionEnd={(e) => ((e.target as any).dataset.composing = "")}
   onKeyDown={(e) => {
     const ne = (e.nativeEvent as any);
-    if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229 || (e.target as any).dataset.composing)) {
+    if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229 || (e.target as any).dataset?.composing)) {
       (e.target as HTMLInputElement).blur();
     }
   }}
@@ -806,6 +805,7 @@ const BoxScore = () => (
   spellCheck={false}
   className="border px-2 py-1 rounded"
 />
+
 
 
   </div>
