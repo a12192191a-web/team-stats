@@ -298,8 +298,15 @@ export default function Home() {
   Record<number, { season: string; tag: string; opponent: string }>
 >({});
 
-const getTextDraft = (g: Game) =>
-  textDraft[g.id] ?? { season: g.season ?? "", tag: g.tag ?? "", opponent: g.opponent ?? "" };
+function getTextDraft(g: Game) {
+  const d = textDraft[g.id] || {};
+  return {
+    season: d.season ?? g.season ?? "",
+    tag: d.tag ?? g.tag ?? "",
+    opponent: d.opponent ?? g.opponent ?? "",
+  };
+}
+
 
 const setDraft = (gid: number, patch: Partial<{season:string; tag:string; opponent:string}>) =>
   setTextDraft(d => ({ ...d, [gid]: { ...(d[gid] || {}), ...patch } }));
@@ -734,7 +741,13 @@ const BoxScore = () => (
   value={d.season}
   onChange={(e) => setDraft(g.id, { season: e.target.value })}
   onBlur={() => commitDraft(g.id)}
-  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+  onKeyDown={(e) => {
+  const ne = (e.nativeEvent as any);
+  if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229)) {
+    (e.target as HTMLInputElement).blur();
+  }
+}}
+
   className="border px-2 py-1 rounded"
 />
 <input
@@ -743,7 +756,13 @@ const BoxScore = () => (
   value={d.tag}
   onChange={(e) => setDraft(g.id, { tag: e.target.value })}
   onBlur={() => commitDraft(g.id)}
-  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+  onKeyDown={(e) => {
+  const ne = (e.nativeEvent as any);
+  if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229)) {
+    (e.target as HTMLInputElement).blur();
+  }
+}}
+
   className="border px-2 py-1 rounded"
 />
 <input
@@ -752,7 +771,13 @@ const BoxScore = () => (
   value={d.opponent}
   onChange={(e) => setDraft(g.id, { opponent: e.target.value })}
   onBlur={() => commitDraft(g.id)}
-  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+  onKeyDown={(e) => {
+  const ne = (e.nativeEvent as any);
+  if (e.key === "Enter" && !(ne?.isComposing || ne?.keyCode === 229)) {
+    (e.target as HTMLInputElement).blur();
+  }
+}}
+
   className="border px-2 py-1 rounded"
 />
 
