@@ -252,10 +252,10 @@ useEffect(() => {
 
   return (
     <input
-      type="text"
+      type="number"
       inputMode="numeric"
       pattern="[0-9]*"
-      className={IN_NUM_GRID}
+      min={0} step={1}  className={IN_NUM_GRID}
       value={text}
       onChange={(e) => {
         const v = e.target.value.replace(/[^\d]/g, "").slice(0, maxLen);
@@ -778,7 +778,7 @@ const BoxScore = () => (
 
 {/* Season */}
 <input
-  type="text"
+  type="number"
   placeholder="Season"
   value={g.season ?? ""}
   onChange={(e) =>
@@ -791,7 +791,7 @@ const BoxScore = () => (
 
 {/* Tag */}
 <input
-  type="text"
+  type="number"
   placeholder="Tag"
   value={g.tag ?? ""}
   onChange={(e) =>
@@ -804,7 +804,7 @@ const BoxScore = () => (
 
 {/* 對手 */}
 <input
-  type="text"
+  type="number"
   placeholder="對手"
   value={g.opponent}
   onChange={(e) =>
