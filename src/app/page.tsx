@@ -404,6 +404,8 @@ const commitDraft = (gid: number) => {
   useDebouncedLocalStorage(STORAGE.compare, compare, 400);
 
   /* ---------------- 雲端同步 ---------------- */
+
+
   async function loadFromCloud() {
     const { data, error } = await supabase
       .from("app_state")
