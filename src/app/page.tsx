@@ -277,17 +277,20 @@ useEffect(() => {
 }
 
 
-/* ---------------- 資料欄位分離：比賽「中繼/中英文」文字輸入 ---------------- */
+/* ---------------- Meta 文字欄位（Season/Tag/對手）：不中斷輸入、失焦/Enter 才回寫 ---------------- */
 type MetaTextProps = { value: string; placeholder?: string; onCommit: (v: string) => void; className?: string };
 const MetaText = memo(function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
   const [t, setT] = useState(value ?? "");
   const ref = useRef<HTMLInputElement | null>(null);
-  const dirtyRef = useRef(false);
+  const dirtyRef = useRef(false); // 使用者正在輸入中
+
+  // 只有在「沒有聚焦」且「沒有在編輯中」時，才會把外部值同步進來
   useEffect(() => {
     const isFocused = typeof document !== "undefined" && ref.current === document.activeElement;
     if (isFocused || dirtyRef.current) return;
     setT(value ?? "");
   }, [value]);
+
   return (
     <input
       ref={ref}
@@ -308,25 +311,7 @@ const MetaText = memo(function MetaText({ value, placeholder, onCommit, classNam
       className={className}
     />
   );
-});, [value]);
-  return (
-    <input
-      type="text"
-      placeholder={placeholder}
-      value={t}
-      onChange={(e) => setT(e.target.value)}   // 允許中英文、符號；不在 onChange 做限制
-      onBlur={() => onCommit(t.trim())}         // 失焦才回寫，避免影響下方數據表 re-render
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          onCommit(t.trim());
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      className={className}
-    />
-  );
-}
-
+});
 /* =========================================================
    MLB 計算（修正版：正統 MLB 算法）
 ========================================================= */
