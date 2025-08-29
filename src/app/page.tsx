@@ -1,12 +1,11 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
-import Image from "next/image";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 /* =========================================================
    共用 class
@@ -239,39 +238,59 @@ function useDebouncedLocalStorage<T>(key: string, value: T, delay = 400) {
 }
 
 
-/* ---------------- Meta 文字欄位（Season/Tag/對手）：不中斷輸入、失焦/Enter 才回寫 ---------------- */
-type MetaTextProps = { value: string; placeholder?: string; onCommit: (v: string) => void; className?: string };
-const MetaText = memo(function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
-  const [t, setT] = useState(value ?? "");
-  const ref = useRef<HTMLInputElement | null>(null);
-  const dirtyRef = useRef(false); // 使用者正在輸入中
+/* ---------------- 數字輸入元件：字串輸入、失焦/Enter 才回寫 ---------------- */
+type NumCellProps = { value: number | null | undefined; onCommit: (n: number) => void; maxLen?: number };
+function NumCell({ value, onCommit, maxLen = 3 }: NumCellProps) {
+  const [text, setText] = useState(
+  (value !== null && value !== undefined) ? String(value) : ""
+);
 
-  // 只有在「沒有聚焦」且「沒有在編輯中」時，才會把外部值同步進來
-  useEffect(() => {
-    const isFocused = typeof document !== "undefined" && ref.current === document.activeElement;
-    if (isFocused || dirtyRef.current) return;
-    setT(value ?? "");
-  }, [value]);
+useEffect(() => {
+  const next = (value !== null && value !== undefined) ? String(value) : "";
+  setText(next);
+}, [value]);
 
   return (
     <input
-      ref={ref}
       type="text"
-      placeholder={placeholder}
-      value={t}
+      inputMode="numeric"
+      pattern="[0-9]*"
+      className={IN_NUM_GRID}
+      value={text}
       onChange={(e) => {
-        dirtyRef.current = true;
-        setT(e.target.value);
+        const v = e.target.value.replace(/[^\d]/g, "").slice(0, maxLen);
+        setText(v);
       }}
       onBlur={() => {
-        dirtyRef.current = false;
-        onCommit(t.trim());
+        const n = text === "" ? 0 : parseInt(text, 10);
+        onCommit(Number.isFinite(n) ? n : 0);
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
-          e.preventDefault();
-          e.stopPropagation();
-          dirtyRef.current = false;
+          const n = text === "" ? 0 : parseInt(text, 10);
+          onCommit(Number.isFinite(n) ? n : 0);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+}
+
+
+/* ---------------- 資料欄位分離：比賽「中繼/中英文」文字輸入 ---------------- */
+type MetaTextProps = { value: string; placeholder?: string; onCommit: (v: string) => void; className?: string };
+function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
+  const [t, setT] = useState(value ?? "");
+  useEffect(() => { setT(value ?? ""); }, [value]);
+  return (
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={t}
+      onChange={(e) => setT(e.target.value)}   // 允許中英文、符號；不在 onChange 做限制
+      onBlur={() => onCommit(t.trim())}         // 失焦才回寫，避免影響下方數據表 re-render
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
           onCommit(t.trim());
           (e.target as HTMLInputElement).blur();
         }
@@ -279,7 +298,7 @@ const MetaText = memo(function MetaText({ value, placeholder, onCommit, classNam
       className={className}
     />
   );
-});
+}
 
 /* =========================================================
    MLB 計算（修正版：正統 MLB 算法）
@@ -435,33 +454,33 @@ const Navbar = () => (
     <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
     <div className="font-bold tracking-wide">RS Baseball Manager</div>
     <div className="ml-auto flex flex-wrap gap-2">
-      <button type="button"
+      <button
         onClick={() => setTopTab("players")}
         className={`${BTN} ${topTab === "players" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >球員清單</button>
 
-      <button type="button"
+      <button
         onClick={() => { setTopTab("features"); setSubTab("box"); }}
         className={`${BTN} ${topTab === "features" && subTab === "box" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >比賽紀錄</button>
 
-      <button type="button"
+      <button
         onClick={() => { setTopTab("features"); setSubTab("career"); }}
         className={`${BTN} ${topTab === "features" && subTab === "career" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >生涯數據</button>
 
-      <button type="button"
+      <button
         onClick={() => { setTopTab("features"); setSubTab("compare"); }}
         className={`${BTN} ${topTab === "features" && subTab === "compare" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >球員對比</button>
 
-      <button type="button"
+      <button
   onClick={() => { setTopTab("features"); setSubTab("trend"); }}
   className={`${BTN} ${topTab === "features" && subTab === "trend" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
 >趨勢圖</button>
 
 
-      <button type="button"
+      <button
         onClick={() => { setTopTab("features"); setSubTab("export"); }}
         className={`${BTN} ${topTab === "features" && subTab === "export" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >匯出</button>
@@ -719,8 +738,8 @@ const addGame = () => {
               </label>
             ))}
           </div>
-          <button type="button" onClick={submit} className="bg-blue-600 text-white px-3 py-1 rounded">新增</button>
-          <button type="button" onClick={clearPlayers} className="bg-red-500 text-white px-3 py-1 rounded">清空球員</button>
+          <button onClick={submit} className="bg-blue-600 text-white px-3 py-1 rounded">新增</button>
+          <button onClick={clearPlayers} className="bg-red-500 text-white px-3 py-1 rounded">清空球員</button>
         </div>
       </div>
     );
@@ -734,7 +753,7 @@ const addGame = () => {
           <div key={p.id} className="border rounded p-3 bg-white">
             <div className="flex items-center justify-between">
               <div className="font-semibold">{p.name}（{p.positions.join("/")}） 投:{p.throws} 打:{p.bats}</div>
-              <button type="button" onClick={() => deletePlayer(p.id)} className="text-sm bg-black text-white px-2 py-1 rounded">刪除</button>
+              <button onClick={() => deletePlayer(p.id)} className="text-sm bg-black text-white px-2 py-1 rounded">刪除</button>
             </div>
             <div className="text-sm mt-2 space-y-1">
               <div>打擊：AB {s.AB}、H {s.H}、AVG {s.AVG}、OBP {s.OBP}、SLG {s.SLG}、OPS {s.OPS}</div>
@@ -753,7 +772,7 @@ const addGame = () => {
 const BoxScore = () => (
   <div className="space-y-4">
     <div className="flex items-center gap-2">
-      <button type="button" onClick={addGame} className="bg-blue-600 text-white px-3 py-1 rounded">新增比賽</button>
+      <button onClick={addGame} className="bg-blue-600 text-white px-3 py-1 rounded">新增比賽</button>
     </div>
 
     {games.map((g) => {
@@ -778,13 +797,13 @@ const BoxScore = () => (
       onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
       className="border px-2 py-1 rounded"
     />
-const d = getTextDraft(g)
+{/* 已有：const d = getTextDraft(g) */}
 
 
 {/* Season */}
 <MetaText
   placeholder="Season"
-  value={g.season ?? ""}
+  value={d.season}
   onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, season: v } : x))}
   className="border px-2 py-1 rounded"
 />
@@ -792,16 +811,21 @@ const d = getTextDraft(g)
 {/* Tag */}
 <MetaText
   placeholder="Tag"
-  value={g.tag ?? ""}
+  value={d.tag}
   onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, tag: v } : x))}
   className="border px-2 py-1 rounded"
 />
 
 {/* 對手 */}
-<MetaText
+<input
+  type="text"
   placeholder="對手"
-  value={g.opponent ?? ""}
-  onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, opponent: v } : x))}
+  value={g.opponent}
+  onChange={(e) =>
+    setGames(prev =>
+      prev.map(x => x.id === g.id ? { ...x, opponent: e.target.value } : x)
+    )
+  }
   className="border px-2 py-1 rounded"
 />
 
@@ -815,7 +839,7 @@ const d = getTextDraft(g)
 
             <div className="ml-auto flex gap-2">
               {!g.locked && (
-                <button type="button" onClick={() => lockGame(g.id)} className="bg-emerald-600 text-white px-3 py-1 rounded">存檔鎖定</button>
+                <button onClick={() => lockGame(g.id)} className="bg-emerald-600 text-white px-3 py-1 rounded">存檔鎖定</button>
               )}
               {g.locked && (
                 <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">已鎖定</span>
@@ -914,8 +938,8 @@ const d = getTextDraft(g)
     </select>
   </div>
 )}
-              <button type="button" onClick={() => exportGameCSV(g)} className="bg-gray-700 text-white px-3 py-1 rounded">匯出 CSV</button>
-             <button type="button"
+              <button onClick={() => exportGameCSV(g)} className="bg-gray-700 text-white px-3 py-1 rounded">匯出 CSV</button>
+             <button
   onClick={() => deleteGame(g.id)}
   disabled={!g.locked}
   className={`px-3 py-1 rounded text-white ${
@@ -934,7 +958,7 @@ const d = getTextDraft(g)
               <div className="font-semibold mb-2">可加入名單（點擊加入，最多 9 人）</div>
               <div className="flex flex-wrap gap-2">
                 {players.filter((p) => !g.lineup.includes(p.id)).map((p) => (
-                  <button type="button" key={p.id}
+                  <button key={p.id}
                     className={`px-2 py-1 rounded border ${g.lineup.length >= 9 || g.locked ? "opacity-40 cursor-not-allowed" : ""}`}
                     onClick={() => addToLineup(g, p.id)} disabled={g.lineup.length >= 9 || g.locked}>
                     {p.name}
@@ -963,7 +987,7 @@ const d = getTextDraft(g)
 >
   <span className="flex-1 pr-2">{idx + 1}棒 — {info.name}（{info.positions.join("/") || "—"}）</span>
   {!g.locked && (
-    <button type="button" onClick={() => removeFromLineup(g, pid)} className="text-xs md:text-sm bg-red-500 text-white px-2.5 md:px-3 py-0.5 md:py-1 rounded">✖</button>
+    <button onClick={() => removeFromLineup(g, pid)} className="text-xs md:text-sm bg-red-500 text-white px-2.5 md:px-3 py-0.5 md:py-1 rounded">✖</button>
   )}
 </li>
                             )}
@@ -999,10 +1023,7 @@ const d = getTextDraft(g)
                         {Object.keys(initBatting()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
-                              <input type="number" className={IN_NUM_GRID} 
-
-                                value={toNonNegNum((cur.batting as any)[stat])}
-                                onChange={(e) => updateGameStat(g.id, pid, "batting", stat, toNonNegNum(e.target.value))} />
+                              <NumCell value={toNonNegNum((cur.batting as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "batting", stat, n)} />
                             )}
                           </td>
                         ))}
@@ -1062,15 +1083,7 @@ const d = getTextDraft(g)
 />
 
       ) : (
-                <input
-                  type="number"
-                  min={0}
-                  className={IN_NUM_GRID}
-                  value={toNonNegNum(rawValue)}
-                  onChange={(e) =>
-                    updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
-                  }
-                />
+                <NumCell value={toNonNegNum(rawValue)} onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)} />
               )}
             </td>
           );
@@ -1089,9 +1102,7 @@ const d = getTextDraft(g)
                         {Object.keys(initBaserun()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.baserunning as any)[stat]) : (
-                              <input type="number" min={0} className={IN_NUM_GRID}
-                                value={toNonNegNum((cur.baserunning as any)[stat])}
-                                onChange={(e) => updateGameStat(g.id, pid, "baserunning", stat, toNonNegNum(e.target.value))} />
+                              <NumCell value={toNonNegNum((cur.baserunning as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "baserunning", stat, n)} />
                             )}
                           </td>
                         ))}
@@ -1109,9 +1120,7 @@ const d = getTextDraft(g)
                         {Object.keys(initFielding()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.fielding as any)[stat]) : (
-                              <input type="number" min={0} className={IN_NUM_GRID}
-                                value={toNonNegNum((cur.fielding as any)[stat])}
-                                onChange={(e) => updateGameStat(g.id, pid, "fielding", stat, toNonNegNum(e.target.value))} />
+                              <NumCell value={toNonNegNum((cur.fielding as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "fielding", stat, n)} />
                             )}
                           </td>
                         ))}
@@ -1139,8 +1148,7 @@ const d = getTextDraft(g)
                   {g.innings.map((v, i) => (
                     <td key={i} className="border px-2 py-1 text-center">
                       {g.locked ? toNonNegNum(v) : (
-                        <input type="number" min={0} className={IN_NUM_GRID}
-                               value={toNonNegNum(v)} onChange={(e) => updateInning(g.id, i, toNonNegNum(e.target.value))} />
+                        <NumCell value={toNonNegNum(v)} onCommit={(n) => updateInning(g.id, i, n)} />
                       )}
                     </td>
                   ))}
@@ -1208,42 +1216,7 @@ const d = getTextDraft(g)
     const METRICS = ["AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"];
     const CHART_METRICS = ["AVG","OBP","SLG","OPS","ERA","WHIP","K9","FPCT"];
     const colors = ["#8884d8","#82ca9d","#ffc658","#ff8a65","#90caf9"];
-    const TrendTab = () => {
-  // 把每場的隊伍 OPS/ERA 做成序列
-  const series = useMemo(() => {
-    return games.map(g => {
-      // 全隊合併：把這場所有人累加成一個 triple
-      const sum = emptyTriple();
-      g.lineup.forEach(pid => {
-        const cur = g.stats[pid]; if (!cur) return;
-        (Object.keys(sum.batting)  as (keyof Batting)[] ).forEach(k => (sum.batting[k]  += toNonNegNum((cur.batting  as any)[k])));
-        (Object.keys(sum.pitching) as (keyof Pitching)[]).forEach(k => (sum.pitching[k] += toNonNegNum((cur.pitching as any)[k])));
-        (Object.keys(sum.fielding) as (keyof Fielding)[]).forEach(k => (sum.fielding[k] += toNonNegNum((cur.fielding as any)[k])));
-        (Object.keys(sum.baserunning) as (keyof Baserun)[]).forEach(k => (sum.baserunning[k] += toNonNegNum((cur.baserunning as any)[k])));
-      });
-      const s = calcStats(sum.batting, sum.pitching, sum.fielding, sum.baserunning);
-      return { game: `${g.date} vs ${g.opponent}`, OPS: Number(s.OPS), ERA: Number(s.ERA) };
-    });
-  }, [games]);
-
-  return (
-    <div className="space-y-4">
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={series}>
-          <XAxis dataKey="game" tick={false} />
-          <YAxis />
-          <Tooltip />
-          <Legend />
-          <Line type="monotone" dataKey="OPS" />
-          <Line type="monotone" dataKey="ERA" />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
-
-
-    const makeRow = (stat: string) => {
+const makeRow = (stat: string) => {
       const row: Record<string, number | string> = { stat };
       compareLive.forEach((id) => {
         const p = players.find((x) => x.id === id); if (!p) return;
@@ -1321,7 +1294,7 @@ const d = getTextDraft(g)
 // --- 趨勢圖分頁（放在 Compare 後、ExportPanel 前） ---
 type TrendTabProps = { games: Game[] };
 
-const TrendTab: React.FC<TrendTabProps> = ({ games }) => {
+const TrendTab = ({ games }: TrendTabProps) => {
   const data = useMemo(() => {
     return games.map((g) => {
       // 全隊合計：一場的 OPS / ERA
@@ -1376,8 +1349,8 @@ const TrendTab: React.FC<TrendTabProps> = ({ games }) => {
   /* ---------------- Export / Career / Cloud ---------------- */
   const ExportPanel = () => (
     <div className="flex flex-wrap items-center gap-2">
-      <button type="button" onClick={exportJSON} className="bg-gray-600 text-white px-3 py-1 rounded">匯出 JSON</button>
-      <button type="button" onClick={exportCSV}  className="bg-gray-800 text-white px-3 py-1 rounded">匯出 CSV</button>
+      <button onClick={exportJSON} className="bg-gray-600 text-white px-3 py-1 rounded">匯出 JSON</button>
+      <button onClick={exportCSV}  className="bg-gray-800 text-white px-3 py-1 rounded">匯出 CSV</button>
 
       <label className="inline-flex items-center gap-2 bg-white border px-3 py-1 rounded cursor-pointer">
         <span>匯入 JSON</span>
@@ -1386,8 +1359,8 @@ const TrendTab: React.FC<TrendTabProps> = ({ games }) => {
       </label>
 
       {/* ⭐ 雲端同步 */}
-      <button type="button" onClick={loadFromCloud} className="bg-teal-600 text-white px-3 py-1 rounded">雲端載入</button>
-      <button type="button" onClick={saveToCloud} className="bg-teal-800 text-white px-3 py-1 rounded">雲端存檔</button>
+      <button onClick={loadFromCloud} className="bg-teal-600 text-white px-3 py-1 rounded">雲端載入</button>
+      <button onClick={saveToCloud} className="bg-teal-800 text-white px-3 py-1 rounded">雲端存檔</button>
     </div>
   );
 
