@@ -1,6 +1,4 @@
 "use client";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -505,6 +503,14 @@ const Navbar = () => (
   className={`${BTN} ${topTab === "features" && subTab === "trend" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
 >趨勢圖</button>
 
+<button
+  onClick={hardRefresh}
+  className="px-3 py-1 rounded border text-xs md:text-sm bg-white text-slate-900"
+  title={BUILD ? `版本 ${BUILD}` : "檢查更新"}
+>
+  檢查更新{BUILD ? ` · ${BUILD.slice(0, 7)}` : ""}
+</button>
+
 
       <button
         onClick={() => { setTopTab("features"); setSubTab("export"); }}
@@ -514,13 +520,7 @@ const Navbar = () => (
   </div>
 );
 
-<button
-  onClick={hardRefresh}
-  className="ml-2 px-3 py-1 rounded border text-xs md:text-sm bg-white text-slate-900"
-  title={BUILD ? `版本 ${BUILD}` : "檢查更新"}
->
-  檢查更新{BUILD ? ` · ${BUILD.slice(0, 7)}` : ""}
-</button>
+
 
 
   /* ---------------- 新增 / 刪除（含保護） ---------------- */
