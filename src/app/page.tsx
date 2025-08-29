@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
@@ -239,20 +239,39 @@ function useDebouncedLocalStorage<T>(key: string, value: T, delay = 400) {
 }
 
 
-/* ---------------- MetaText：Season/Tag/對手 — 與數據欄位分離的文字輸入 ---------------- */
+/* ---------------- Meta 文字欄位（Season/Tag/對手）：不中斷輸入、失焦/Enter 才回寫 ---------------- */
 type MetaTextProps = { value: string; placeholder?: string; onCommit: (v: string) => void; className?: string };
-function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
+const MetaText = memo(function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
   const [t, setT] = useState(value ?? "");
-  useEffect(() => { setT(value ?? ""); }, [value]);
+  const ref = useRef<HTMLInputElement | null>(null);
+  const dirtyRef = useRef(false); // 使用者正在輸入中
+
+  // 只有在「沒有聚焦」且「沒有在編輯中」時，才會把外部值同步進來
+  useEffect(() => {
+    const isFocused = typeof document !== "undefined" && ref.current === document.activeElement;
+    if (isFocused || dirtyRef.current) return;
+    setT(value ?? "");
+  }, [value]);
+
   return (
     <input
+      ref={ref}
       type="text"
       placeholder={placeholder}
       value={t}
-      onChange={(e) => setT(e.target.value)}   // 允許中英文；不在 onChange 回寫全局
-      onBlur={() => onCommit(t.trim())}         // 失焦或 Enter 才回寫，避免牽動大表重渲染
+      onChange={(e) => {
+        dirtyRef.current = true;
+        setT(e.target.value);
+      }}
+      onBlur={() => {
+        dirtyRef.current = false;
+        onCommit(t.trim());
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          dirtyRef.current = false;
           onCommit(t.trim());
           (e.target as HTMLInputElement).blur();
         }
@@ -260,7 +279,7 @@ function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 
       className={className}
     />
   );
-}
+});
 
 /* =========================================================
    MLB 計算（修正版：正統 MLB 算法）
@@ -416,33 +435,33 @@ const Navbar = () => (
     <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
     <div className="font-bold tracking-wide">RS Baseball Manager</div>
     <div className="ml-auto flex flex-wrap gap-2">
-      <button
+      <button type="button"
         onClick={() => setTopTab("players")}
         className={`${BTN} ${topTab === "players" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >球員清單</button>
 
-      <button
+      <button type="button"
         onClick={() => { setTopTab("features"); setSubTab("box"); }}
         className={`${BTN} ${topTab === "features" && subTab === "box" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >比賽紀錄</button>
 
-      <button
+      <button type="button"
         onClick={() => { setTopTab("features"); setSubTab("career"); }}
         className={`${BTN} ${topTab === "features" && subTab === "career" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >生涯數據</button>
 
-      <button
+      <button type="button"
         onClick={() => { setTopTab("features"); setSubTab("compare"); }}
         className={`${BTN} ${topTab === "features" && subTab === "compare" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >球員對比</button>
 
-      <button
+      <button type="button"
   onClick={() => { setTopTab("features"); setSubTab("trend"); }}
   className={`${BTN} ${topTab === "features" && subTab === "trend" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
 >趨勢圖</button>
 
 
-      <button
+      <button type="button"
         onClick={() => { setTopTab("features"); setSubTab("export"); }}
         className={`${BTN} ${topTab === "features" && subTab === "export" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >匯出</button>
@@ -700,8 +719,8 @@ const addGame = () => {
               </label>
             ))}
           </div>
-          <button onClick={submit} className="bg-blue-600 text-white px-3 py-1 rounded">新增</button>
-          <button onClick={clearPlayers} className="bg-red-500 text-white px-3 py-1 rounded">清空球員</button>
+          <button type="button" onClick={submit} className="bg-blue-600 text-white px-3 py-1 rounded">新增</button>
+          <button type="button" onClick={clearPlayers} className="bg-red-500 text-white px-3 py-1 rounded">清空球員</button>
         </div>
       </div>
     );
@@ -715,7 +734,7 @@ const addGame = () => {
           <div key={p.id} className="border rounded p-3 bg-white">
             <div className="flex items-center justify-between">
               <div className="font-semibold">{p.name}（{p.positions.join("/")}） 投:{p.throws} 打:{p.bats}</div>
-              <button onClick={() => deletePlayer(p.id)} className="text-sm bg-black text-white px-2 py-1 rounded">刪除</button>
+              <button type="button" onClick={() => deletePlayer(p.id)} className="text-sm bg-black text-white px-2 py-1 rounded">刪除</button>
             </div>
             <div className="text-sm mt-2 space-y-1">
               <div>打擊：AB {s.AB}、H {s.H}、AVG {s.AVG}、OBP {s.OBP}、SLG {s.SLG}、OPS {s.OPS}</div>
@@ -734,7 +753,7 @@ const addGame = () => {
 const BoxScore = () => (
   <div className="space-y-4">
     <div className="flex items-center gap-2">
-      <button onClick={addGame} className="bg-blue-600 text-white px-3 py-1 rounded">新增比賽</button>
+      <button type="button" onClick={addGame} className="bg-blue-600 text-white px-3 py-1 rounded">新增比賽</button>
     </div>
 
     {games.map((g) => {
@@ -796,7 +815,7 @@ const BoxScore = () => (
 
             <div className="ml-auto flex gap-2">
               {!g.locked && (
-                <button onClick={() => lockGame(g.id)} className="bg-emerald-600 text-white px-3 py-1 rounded">存檔鎖定</button>
+                <button type="button" onClick={() => lockGame(g.id)} className="bg-emerald-600 text-white px-3 py-1 rounded">存檔鎖定</button>
               )}
               {g.locked && (
                 <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">已鎖定</span>
@@ -895,8 +914,8 @@ const BoxScore = () => (
     </select>
   </div>
 )}
-              <button onClick={() => exportGameCSV(g)} className="bg-gray-700 text-white px-3 py-1 rounded">匯出 CSV</button>
-             <button
+              <button type="button" onClick={() => exportGameCSV(g)} className="bg-gray-700 text-white px-3 py-1 rounded">匯出 CSV</button>
+             <button type="button"
   onClick={() => deleteGame(g.id)}
   disabled={!g.locked}
   className={`px-3 py-1 rounded text-white ${
@@ -915,7 +934,7 @@ const BoxScore = () => (
               <div className="font-semibold mb-2">可加入名單（點擊加入，最多 9 人）</div>
               <div className="flex flex-wrap gap-2">
                 {players.filter((p) => !g.lineup.includes(p.id)).map((p) => (
-                  <button key={p.id}
+                  <button type="button" key={p.id}
                     className={`px-2 py-1 rounded border ${g.lineup.length >= 9 || g.locked ? "opacity-40 cursor-not-allowed" : ""}`}
                     onClick={() => addToLineup(g, p.id)} disabled={g.lineup.length >= 9 || g.locked}>
                     {p.name}
@@ -944,7 +963,7 @@ const BoxScore = () => (
 >
   <span className="flex-1 pr-2">{idx + 1}棒 — {info.name}（{info.positions.join("/") || "—"}）</span>
   {!g.locked && (
-    <button onClick={() => removeFromLineup(g, pid)} className="text-xs md:text-sm bg-red-500 text-white px-2.5 md:px-3 py-0.5 md:py-1 rounded">✖</button>
+    <button type="button" onClick={() => removeFromLineup(g, pid)} className="text-xs md:text-sm bg-red-500 text-white px-2.5 md:px-3 py-0.5 md:py-1 rounded">✖</button>
   )}
 </li>
                             )}
@@ -1357,8 +1376,8 @@ const TrendTab: React.FC<TrendTabProps> = ({ games }) => {
   /* ---------------- Export / Career / Cloud ---------------- */
   const ExportPanel = () => (
     <div className="flex flex-wrap items-center gap-2">
-      <button onClick={exportJSON} className="bg-gray-600 text-white px-3 py-1 rounded">匯出 JSON</button>
-      <button onClick={exportCSV}  className="bg-gray-800 text-white px-3 py-1 rounded">匯出 CSV</button>
+      <button type="button" onClick={exportJSON} className="bg-gray-600 text-white px-3 py-1 rounded">匯出 JSON</button>
+      <button type="button" onClick={exportCSV}  className="bg-gray-800 text-white px-3 py-1 rounded">匯出 CSV</button>
 
       <label className="inline-flex items-center gap-2 bg-white border px-3 py-1 rounded cursor-pointer">
         <span>匯入 JSON</span>
@@ -1367,8 +1386,8 @@ const TrendTab: React.FC<TrendTabProps> = ({ games }) => {
       </label>
 
       {/* ⭐ 雲端同步 */}
-      <button onClick={loadFromCloud} className="bg-teal-600 text-white px-3 py-1 rounded">雲端載入</button>
-      <button onClick={saveToCloud} className="bg-teal-800 text-white px-3 py-1 rounded">雲端存檔</button>
+      <button type="button" onClick={loadFromCloud} className="bg-teal-600 text-white px-3 py-1 rounded">雲端載入</button>
+      <button type="button" onClick={saveToCloud} className="bg-teal-800 text-white px-3 py-1 rounded">雲端存檔</button>
     </div>
   );
 
