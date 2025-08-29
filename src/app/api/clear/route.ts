@@ -1,3 +1,4 @@
+// src/app/api/clear/route.ts
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const next = url.searchParams.get("next") || "/";
@@ -11,7 +12,6 @@ export async function GET(req: Request) {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
-      // 重點：清除這個網域的 cache + storage（含 PWA Cache Storage）
       "Clear-Site-Data": '"cache", "storage"',
     },
   });
