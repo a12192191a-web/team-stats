@@ -252,10 +252,10 @@ useEffect(() => {
 
   return (
     <input
-      type="number"
+      type="text"
       inputMode="numeric"
       pattern="[0-9]*"
-      min={0} step={1}  className={IN_NUM_GRID}
+      className={IN_NUM_GRID}
       value={text}
       onChange={(e) => {
         const v = e.target.value.replace(/[^\d]/g, "").slice(0, maxLen);
@@ -272,6 +272,30 @@ useEffect(() => {
           (e.target as HTMLInputElement).blur();
         }
       }}
+    />
+  );
+}
+
+
+/* ---------------- 資料欄位分離：比賽「中繼/中英文」文字輸入 ---------------- */
+type MetaTextProps = { value: string; placeholder?: string; onCommit: (v: string) => void; className?: string };
+function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
+  const [t, setT] = useState(value ?? "");
+  useEffect(() => { setT(value ?? ""); }, [value]);
+  return (
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={t}
+      onChange={(e) => setT(e.target.value)}   // 允許中英文、符號；不在 onChange 做限制
+      onBlur={() => onCommit(t.trim())}         // 失焦才回寫，避免影響下方數據表 re-render
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          onCommit(t.trim());
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      className={className}
     />
   );
 }
@@ -778,7 +802,7 @@ const BoxScore = () => (
 
 {/* Season */}
 <input
-  type="number"
+  type="text"
   placeholder="Season"
   value={g.season ?? ""}
   onChange={(e) =>
@@ -791,7 +815,7 @@ const BoxScore = () => (
 
 {/* Tag */}
 <input
-  type="number"
+  type="text"
   placeholder="Tag"
   value={g.tag ?? ""}
   onChange={(e) =>
@@ -804,7 +828,7 @@ const BoxScore = () => (
 
 {/* 對手 */}
 <input
-  type="number"
+  type="text"
   placeholder="對手"
   value={g.opponent}
   onChange={(e) =>
