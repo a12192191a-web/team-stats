@@ -785,6 +785,8 @@ const BoxScore = () => (
       const teamR = g.innings.reduce((a, b) => a + toNonNegNum(b), 0);
       
 
+  const d = getTextDraft(g);
+
       return (
         <div key={g.id} className="border rounded p-3 bg-white space-y-4">
           {/* 標題列 + 匯出按鈕 */}
@@ -797,7 +799,7 @@ const BoxScore = () => (
       onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
       className="border px-2 py-1 rounded"
     />
-{/* 已有：const d = getTextDraft(g) */}
+
 
 
 {/* Season */}
