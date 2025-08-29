@@ -237,6 +237,41 @@ function useDebouncedLocalStorage<T>(key: string, value: T, delay = 400) {
   }, [key, value, delay]);
 }
 
+
+/* ---------------- 數字輸入元件：字串輸入、失焦/Enter 才回寫 ---------------- */
+type NumCellProps = { value: number | null | undefined; onCommit: (n: number) => void; maxLen?: number };
+function NumCell({ value, onCommit, maxLen = 3 }: NumCellProps) {
+  const [text, setText] = useState(value ?? value === 0 ? String(value) : "");
+  useEffect(() => {
+    const next = value ?? value === 0 ? String(value) : "";
+    setText(next);
+  }, [value]);
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      className={IN_NUM_GRID}
+      value={text}
+      onChange={(e) => {
+        const v = e.target.value.replace(/[^\d]/g, "").slice(0, maxLen);
+        setText(v);
+      }}
+      onBlur={() => {
+        const n = text === "" ? 0 : parseInt(text, 10);
+        onCommit(Number.isFinite(n) ? n : 0);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          const n = text === "" ? 0 : parseInt(text, 10);
+          onCommit(Number.isFinite(n) ? n : 0);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+}
+
 /* =========================================================
    MLB 計算（修正版：正統 MLB 算法）
 ========================================================= */
@@ -970,10 +1005,7 @@ const BoxScore = () => (
                         {Object.keys(initBatting()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
-                              <input type="number" className={IN_NUM_GRID} 
-
-                                value={toNonNegNum((cur.batting as any)[stat])}
-                                onChange={(e) => updateGameStat(g.id, pid, "batting", stat, toNonNegNum(e.target.value))} />
+                              <NumCell value={toNonNegNum((cur.batting as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "batting", stat, n)} />
                             )}
                           </td>
                         ))}
@@ -1033,15 +1065,7 @@ const BoxScore = () => (
 />
 
       ) : (
-                <input
-                  type="number"
-                  min={0}
-                  className={IN_NUM_GRID}
-                  value={toNonNegNum(rawValue)}
-                  onChange={(e) =>
-                    updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
-                  }
-                />
+                <NumCell value={toNonNegNum(rawValue)} onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)} />
               )}
             </td>
           );
@@ -1060,9 +1084,7 @@ const BoxScore = () => (
                         {Object.keys(initBaserun()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.baserunning as any)[stat]) : (
-                              <input type="number" min={0} className={IN_NUM_GRID}
-                                value={toNonNegNum((cur.baserunning as any)[stat])}
-                                onChange={(e) => updateGameStat(g.id, pid, "baserunning", stat, toNonNegNum(e.target.value))} />
+                              <NumCell value={toNonNegNum((cur.baserunning as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "baserunning", stat, n)} />
                             )}
                           </td>
                         ))}
@@ -1080,9 +1102,7 @@ const BoxScore = () => (
                         {Object.keys(initFielding()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.fielding as any)[stat]) : (
-                              <input type="number" min={0} className={IN_NUM_GRID}
-                                value={toNonNegNum((cur.fielding as any)[stat])}
-                                onChange={(e) => updateGameStat(g.id, pid, "fielding", stat, toNonNegNum(e.target.value))} />
+                              <NumCell value={toNonNegNum((cur.fielding as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "fielding", stat, n)} />
                             )}
                           </td>
                         ))}
@@ -1110,8 +1130,7 @@ const BoxScore = () => (
                   {g.innings.map((v, i) => (
                     <td key={i} className="border px-2 py-1 text-center">
                       {g.locked ? toNonNegNum(v) : (
-                        <input type="number" min={0} className={IN_NUM_GRID}
-                               value={toNonNegNum(v)} onChange={(e) => updateInning(g.id, i, toNonNegNum(e.target.value))} />
+                        <NumCell value={toNonNegNum(v)} onCommit={(n) => updateInning(g.id, i, n)} />
                       )}
                     </td>
                   ))}
