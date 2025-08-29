@@ -487,8 +487,7 @@ const commitDraft = (gid: number) => {
     )
     .subscribe();
 
-  return () => supabase.removeChannel(ch);
-// eslint-disable-next-line react-hooks/exhaustive-deps
+  return () => { void supabase.removeChannel(ch); };
 }, []);
 
 
