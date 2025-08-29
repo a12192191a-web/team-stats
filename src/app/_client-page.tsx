@@ -452,6 +452,29 @@ const commitDraft = (gid: number) => {
   }
 
   /* ---------------- Navbar ---------------- */
+  // 放在檔案頂部任意位置（在 component 外也可）
+const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
+
+async function hardRefresh() {
+  try {
+    // 清掉 Cache Storage（含舊版 PWA 快取）
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+    // 叫 service worker 拉新版本（如果有裝 PWA）
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.update()));
+    }
+  } finally {
+    // 以版本碼做 cache-busting
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", BUILD || String(Date.now()));
+    window.location.replace(url.toString());
+  }
+}
+
 const Navbar = () => (
   <div className="w-full sticky top-0 z-10 bg-[#08213A] text-white flex items-center gap-4 px-4 py-2">
     <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
@@ -490,6 +513,14 @@ const Navbar = () => (
     </div>
   </div>
 );
+
+<button
+  onClick={hardRefresh}
+  className="ml-2 px-3 py-1 rounded border text-xs md:text-sm bg-white text-slate-900"
+  title={BUILD ? `版本 ${BUILD}` : "檢查更新"}
+>
+  檢查更新{BUILD ? ` · ${BUILD.slice(0, 7)}` : ""}
+</button>
 
 
   /* ---------------- 新增 / 刪除（含保護） ---------------- */
