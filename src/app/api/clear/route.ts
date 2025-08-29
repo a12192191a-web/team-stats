@@ -1,6 +1,4 @@
-import type { NextRequest } from "next/server";
-
-export async function GET(req: NextRequest) {
+export async function GET(req: Request) {
   const url = new URL(req.url);
   const next = url.searchParams.get("next") || "/";
 
@@ -13,7 +11,7 @@ export async function GET(req: NextRequest) {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
-      // 這行是關鍵：清掉這個網域的快取與儲存（含 PWA Cache Storage）
+      // 重點：清除這個網域的 cache + storage（含 PWA Cache Storage）
       "Clear-Site-Data": '"cache", "storage"',
     },
   });
