@@ -450,28 +450,19 @@ const commitDraft = (gid: number) => {
   }
 
   /* ---------------- Navbar ---------------- */
-  // 放在檔案頂部任意位置（在 component 外也可）
+
 const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
 
 async function hardRefresh() {
-  try {
-    // 1) 砍掉 Cache Storage
-    if ("caches" in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    }
-    // 2) 把所有 Service Worker 註銷（若曾安裝 PWA，這步最關鍵）
-    if ("serviceWorker" in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister().catch(() => {})));
-    }
-  } finally {
-    // 3) 版本參數換新，避免瀏覽器重用舊導覽
-    const url = new URL(window.location.href);
-    url.searchParams.set("v", BUILD || String(Date.now()));
-    window.location.replace(url.toString());
-  }
+  // 以版本參數組出回跳網址
+  const url = new URL(window.location.href);
+  url.searchParams.set("v", BUILD || String(Date.now()));
+  const next = url.toString();
+
+  // 導航到 /api/clear（會回 200 並自動轉回 next）
+  window.location.href = "/api/clear?next=" + encodeURIComponent(next);
 }
+
 
 
 const Navbar = () => (
