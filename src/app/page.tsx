@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
@@ -277,33 +277,20 @@ useEffect(() => {
 }
 
 
-/* ---------------- Meta 文字欄位（Season/Tag/對手）：不中斷輸入、失焦/Enter 才回寫 ---------------- */
+/* ---------------- 資料欄位分離：比賽「中繼/中英文」文字輸入 ---------------- */
 type MetaTextProps = { value: string; placeholder?: string; onCommit: (v: string) => void; className?: string };
-const MetaText = memo(function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
+function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
   const [t, setT] = useState(value ?? "");
-  const ref = useRef<HTMLInputElement | null>(null);
-  const dirtyRef = useRef(false); // 使用者正在輸入中
-
-  // 只有在「沒有聚焦」且「沒有在編輯中」時，才會把外部值同步進來
-  useEffect(() => {
-    const isFocused = typeof document !== "undefined" && ref.current === document.activeElement;
-    if (isFocused || dirtyRef.current) return;
-    setT(value ?? "");
-  }, [value]);
-
+  useEffect(() => { setT(value ?? ""); }, [value]);
   return (
     <input
-      ref={ref}
       type="text"
       placeholder={placeholder}
       value={t}
-      onChange={(e) => { dirtyRef.current = true; setT(e.target.value); }}
-      onBlur={() => { dirtyRef.current = false; onCommit(t.trim()); }}
+      onChange={(e) => setT(e.target.value)}   // 允許中英文、符號；不在 onChange 做限制
+      onBlur={() => onCommit(t.trim())}         // 失焦才回寫，避免影響下方數據表 re-render
       onKeyDown={(e) => {
         if (e.key === "Enter") {
-          e.preventDefault();
-          e.stopPropagation();
-          dirtyRef.current = false;
           onCommit(t.trim());
           (e.target as HTMLInputElement).blur();
         }
@@ -311,7 +298,8 @@ const MetaText = memo(function MetaText({ value, placeholder, onCommit, classNam
       className={className}
     />
   );
-});
+}
+
 /* =========================================================
    MLB 計算（修正版：正統 MLB 算法）
 ========================================================= */
@@ -797,6 +785,8 @@ const BoxScore = () => (
       const teamR = g.innings.reduce((a, b) => a + toNonNegNum(b), 0);
       
 
+  const d = getTextDraft(g);
+
       return (
         <div key={g.id} className="border rounded p-3 bg-white space-y-4">
           {/* 標題列 + 匯出按鈕 */}
@@ -809,32 +799,22 @@ const BoxScore = () => (
       onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
       className="border px-2 py-1 rounded"
     />
-{/* 已有：const d = getTextDraft(g) */}
+
 
 
 {/* Season */}
-<input
-  type="text"
+<MetaText
   placeholder="Season"
-  value={g.season ?? ""}
-  onChange={(e) =>
-    setGames(prev =>
-      prev.map(x => x.id === g.id ? { ...x, season: e.target.value } : x)
-    )
-  }
+  value={d.season}
+  onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, season: v } : x))}
   className="border px-2 py-1 rounded"
 />
 
 {/* Tag */}
-<input
-  type="text"
+<MetaText
   placeholder="Tag"
-  value={g.tag ?? ""}
-  onChange={(e) =>
-    setGames(prev =>
-      prev.map(x => x.id === g.id ? { ...x, tag: e.target.value } : x)
-    )
-  }
+  value={d.tag}
+  onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, tag: v } : x))}
   className="border px-2 py-1 rounded"
 />
 
