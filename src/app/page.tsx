@@ -819,17 +819,17 @@ const BoxScore = () => (
 />
 
 {/* 對手 */}
-<input
-  type="text"
+<MetaText
   placeholder="對手"
   value={g.opponent}
-  onChange={(e) =>
+  onCommit={(v) =>
     setGames(prev =>
-      prev.map(x => x.id === g.id ? { ...x, opponent: e.target.value } : x)
+      prev.map(x => x.id === g.id ? { ...x, opponent: v } : x)
     )
   }
   className="border px-2 py-1 rounded"
 />
+
 
 
 
