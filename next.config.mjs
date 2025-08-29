@@ -5,6 +5,7 @@ const nextConfig = {
     NEXT_PUBLIC_BUILD:
       process.env.VERCEL_GIT_COMMIT_SHA ??
       new Date().toISOString().replace(/[-:TZ:.]/g, '').slice(0, 12),
+      NEXT_PUBLIC_BUILD_AT: new Date().toISOString(),
   },
 
   // 新增這段：只對「瀏覽器要 HTML」的請求回 no-store，靜態資產照樣快取

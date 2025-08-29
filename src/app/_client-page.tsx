@@ -1,4 +1,27 @@
 "use client";
+"use client";
+
+// 1) 版本碼 & 版本時間（來自 next.config.mjs）
+const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
+const BUILD_AT = process.env.NEXT_PUBLIC_BUILD_AT ?? "";
+
+// 2) 轉成人類可讀（台灣時間）
+const buildLabel = (() => {
+  try {
+    if (!BUILD_AT) return "";
+    const d = new Date(BUILD_AT);
+    return new Intl.DateTimeFormat("zh-TW", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Taipei",
+    }).format(d).replace(/\//g, "-");
+  } catch { return ""; }
+})();
+
 import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -449,6 +472,21 @@ const commitDraft = (gid: number) => {
     alert("已存到雲端。");
   }
 
+// === Realtime：有人雲端存檔，就自動載入 ===
+useEffect(() => {
+  const ch = supabase
+    .channel('app_state_sync')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'app_state', filter: 'id=eq.default' },
+      () => { loadFromCloud(); }
+    )
+    .subscribe();
+
+  return () => { supabase.removeChannel(ch); };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
   /* ---------------- Navbar ---------------- */
 
 const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
@@ -500,8 +538,10 @@ const Navbar = () => (
   className="px-3 py-1 rounded border text-xs md:text-sm bg-white text-slate-900"
   title={BUILD ? `版本 ${BUILD}` : "檢查更新"}
 >
-  檢查更新{BUILD ? ` · ${BUILD.slice(0, 7)}` : ""}
+  檢查更新{buildLabel ? ` · ${buildLabel}` : ""}
 </button>
+
+
 
 
       <button
