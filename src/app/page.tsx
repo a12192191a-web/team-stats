@@ -241,11 +241,15 @@ function useDebouncedLocalStorage<T>(key: string, value: T, delay = 400) {
 /* ---------------- 數字輸入元件：字串輸入、失焦/Enter 才回寫 ---------------- */
 type NumCellProps = { value: number | null | undefined; onCommit: (n: number) => void; maxLen?: number };
 function NumCell({ value, onCommit, maxLen = 3 }: NumCellProps) {
-  const [text, setText] = useState(value ?? value === 0 ? String(value) : "");
-  useEffect(() => {
-    const next = value ?? value === 0 ? String(value) : "";
-    setText(next);
-  }, [value]);
+  const [text, setText] = useState(
+  (value !== null && value !== undefined) ? String(value) : ""
+);
+
+useEffect(() => {
+  const next = (value !== null && value !== undefined) ? String(value) : "";
+  setText(next);
+}, [value]);
+
   return (
     <input
       type="text"
