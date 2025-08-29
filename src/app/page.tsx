@@ -778,7 +778,7 @@ const BoxScore = () => (
       onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
       className="border px-2 py-1 rounded"
     />
-{/* 已有：const d = getTextDraft(g) */}
+const d = getTextDraft(g)
 
 
 {/* Season */}
@@ -1139,7 +1139,7 @@ const BoxScore = () => (
                   {g.innings.map((v, i) => (
                     <td key={i} className="border px-2 py-1 text-center">
                       {g.locked ? toNonNegNum(v) : (
-                        <input type="number" min={0} className="w-14 border rounded px-1 py-0.5 text-right"
+                        <input type="number" min={0} className={IN_NUM_GRID}
                                value={toNonNegNum(v)} onChange={(e) => updateInning(g.id, i, toNonNegNum(e.target.value))} />
                       )}
                     </td>
