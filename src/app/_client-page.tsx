@@ -408,7 +408,7 @@ const commitDraft = (gid: number) => {
   const [ipDraft, setIpDraft] = useState<Record<string, string>>({});
   // 雲端 updated_at（做覆蓋確認用）
   const [cloudTS, setCloudTS] = useState<string | null>(null);
-
+  const lastSaveAtRef = useRef(0); 
   // 掛載後載入「本機」資料（你也可以改成預設讀雲端，見下方注解）
   useEffect(() => {
     setMounted(true);
@@ -469,23 +469,30 @@ const commitDraft = (gid: number) => {
 
     if (error) { alert("雲端存檔失敗：" + error.message); return; }
     setCloudTS(data?.updated_at ?? null);
+    lastSaveAtRef.current = Date.now();
     alert("已存到雲端。");
   }
 
-// === Realtime：有人雲端存檔，就自動載入 ===
-useEffect(() => {
+ useEffect(() => {
   const ch = supabase
     .channel('app_state_sync')
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'app_state', filter: 'id=eq.default' },
-      () => { loadFromCloud(); }
+      (payload) => {
+        const ts = new Date((payload as any).commit_timestamp).getTime?.() ?? 0;
+        if (ts && ts <= lastSaveAtRef.current + 200) return; // ← 自己剛存的那筆，略過
+        loadFromCloud();
+      }
     )
     .subscribe();
 
-  return () => { supabase.removeChannel(ch); };
+  return () => supabase.removeChannel(ch);
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
+
+
+
 
   /* ---------------- Navbar ---------------- */
 
