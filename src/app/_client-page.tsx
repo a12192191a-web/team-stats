@@ -455,23 +455,24 @@ const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
 
 async function hardRefresh() {
   try {
-    // 清掉 Cache Storage（含舊版 PWA 快取）
+    // 1) 砍掉 Cache Storage
     if ("caches" in window) {
       const keys = await caches.keys();
       await Promise.all(keys.map((k) => caches.delete(k)));
     }
-    // 叫 service worker 拉新版本（如果有裝 PWA）
+    // 2) 把所有 Service Worker 註銷（若曾安裝 PWA，這步最關鍵）
     if ("serviceWorker" in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.update()));
+      await Promise.all(regs.map((r) => r.unregister().catch(() => {})));
     }
   } finally {
-    // 以版本碼做 cache-busting
+    // 3) 版本參數換新，避免瀏覽器重用舊導覽
     const url = new URL(window.location.href);
     url.searchParams.set("v", BUILD || String(Date.now()));
     window.location.replace(url.toString());
   }
 }
+
 
 const Navbar = () => (
   <div className="w-full sticky top-0 z-10 bg-[#08213A] text-white flex items-center gap-4 px-4 py-2">
