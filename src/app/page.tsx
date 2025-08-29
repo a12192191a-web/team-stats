@@ -252,9 +252,9 @@ useEffect(() => {
 
   return (
     <input
-      type="text"
-      inputMode="numeric"
-      pattern="[0-9]*"
+      type="number"
+      min={0}
+      step={1}
       className={IN_NUM_GRID}
       value={text}
       onChange={(e) => {
@@ -785,8 +785,6 @@ const BoxScore = () => (
       const teamR = g.innings.reduce((a, b) => a + toNonNegNum(b), 0);
       
 
-  const d = getTextDraft(g);
-
       return (
         <div key={g.id} className="border rounded p-3 bg-white space-y-4">
           {/* 標題列 + 匯出按鈕 */}
@@ -799,22 +797,32 @@ const BoxScore = () => (
       onChange={(e) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, date: e.target.value } : x))}
       className="border px-2 py-1 rounded"
     />
-
+{/* 已有：const d = getTextDraft(g) */}
 
 
 {/* Season */}
-<MetaText
+<input
+  type="text"
   placeholder="Season"
-  value={d.season}
-  onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, season: v } : x))}
+  value={g.season ?? ""}
+  onChange={(e) =>
+    setGames(prev =>
+      prev.map(x => x.id === g.id ? { ...x, season: e.target.value } : x)
+    )
+  }
   className="border px-2 py-1 rounded"
 />
 
 {/* Tag */}
-<MetaText
+<input
+  type="text"
   placeholder="Tag"
-  value={d.tag}
-  onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, tag: v } : x))}
+  value={g.tag ?? ""}
+  onChange={(e) =>
+    setGames(prev =>
+      prev.map(x => x.id === g.id ? { ...x, tag: e.target.value } : x)
+    )
+  }
   className="border px-2 py-1 rounded"
 />
 
