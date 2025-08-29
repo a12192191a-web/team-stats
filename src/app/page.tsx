@@ -6,6 +6,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
+import Image from "next/image";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 /* =========================================================
    共用 class
@@ -238,46 +239,7 @@ function useDebouncedLocalStorage<T>(key: string, value: T, delay = 400) {
 }
 
 
-/* ---------------- 數字輸入元件：字串輸入、失焦/Enter 才回寫 ---------------- */
-type NumCellProps = { value: number | null | undefined; onCommit: (n: number) => void; maxLen?: number };
-function NumCell({ value, onCommit, maxLen = 3 }: NumCellProps) {
-  const [text, setText] = useState(
-  (value !== null && value !== undefined) ? String(value) : ""
-);
-
-useEffect(() => {
-  const next = (value !== null && value !== undefined) ? String(value) : "";
-  setText(next);
-}, [value]);
-
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      pattern="[0-9]*"
-      className={IN_NUM_GRID}
-      value={text}
-      onChange={(e) => {
-        const v = e.target.value.replace(/[^\d]/g, "").slice(0, maxLen);
-        setText(v);
-      }}
-      onBlur={() => {
-        const n = text === "" ? 0 : parseInt(text, 10);
-        onCommit(Number.isFinite(n) ? n : 0);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          const n = text === "" ? 0 : parseInt(text, 10);
-          onCommit(Number.isFinite(n) ? n : 0);
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-    />
-  );
-}
-
-
-/* ---------------- 資料欄位分離：比賽「中繼/中英文」文字輸入 ---------------- */
+/* ---------------- MetaText：Season/Tag/對手 — 與數據欄位分離的文字輸入 ---------------- */
 type MetaTextProps = { value: string; placeholder?: string; onCommit: (v: string) => void; className?: string };
 function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
   const [t, setT] = useState(value ?? "");
@@ -287,8 +249,8 @@ function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 
       type="text"
       placeholder={placeholder}
       value={t}
-      onChange={(e) => setT(e.target.value)}   // 允許中英文、符號；不在 onChange 做限制
-      onBlur={() => onCommit(t.trim())}         // 失焦才回寫，避免影響下方數據表 re-render
+      onChange={(e) => setT(e.target.value)}   // 允許中英文；不在 onChange 回寫全局
+      onBlur={() => onCommit(t.trim())}         // 失焦或 Enter 才回寫，避免牽動大表重渲染
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           onCommit(t.trim());
@@ -801,41 +763,26 @@ const BoxScore = () => (
 
 
 {/* Season */}
-<input
-  type="text"
+<MetaText
   placeholder="Season"
   value={g.season ?? ""}
-  onChange={(e) =>
-    setGames(prev =>
-      prev.map(x => x.id === g.id ? { ...x, season: e.target.value } : x)
-    )
-  }
+  onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, season: v } : x))}
   className="border px-2 py-1 rounded"
 />
 
 {/* Tag */}
-<input
-  type="text"
+<MetaText
   placeholder="Tag"
   value={g.tag ?? ""}
-  onChange={(e) =>
-    setGames(prev =>
-      prev.map(x => x.id === g.id ? { ...x, tag: e.target.value } : x)
-    )
-  }
+  onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, tag: v } : x))}
   className="border px-2 py-1 rounded"
 />
 
 {/* 對手 */}
-<input
-  type="text"
+<MetaText
   placeholder="對手"
-  value={g.opponent}
-  onChange={(e) =>
-    setGames(prev =>
-      prev.map(x => x.id === g.id ? { ...x, opponent: e.target.value } : x)
-    )
-  }
+  value={g.opponent ?? ""}
+  onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, opponent: v } : x))}
   className="border px-2 py-1 rounded"
 />
 
@@ -1033,7 +980,10 @@ const BoxScore = () => (
                         {Object.keys(initBatting()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
-                              <NumCell value={toNonNegNum((cur.batting as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "batting", stat, n)} />
+                              <input type="number" className={IN_NUM_GRID} 
+
+                                value={toNonNegNum((cur.batting as any)[stat])}
+                                onChange={(e) => updateGameStat(g.id, pid, "batting", stat, toNonNegNum(e.target.value))} />
                             )}
                           </td>
                         ))}
@@ -1093,7 +1043,15 @@ const BoxScore = () => (
 />
 
       ) : (
-                <NumCell value={toNonNegNum(rawValue)} onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)} />
+                <input
+                  type="number"
+                  min={0}
+                  className={IN_NUM_GRID}
+                  value={toNonNegNum(rawValue)}
+                  onChange={(e) =>
+                    updateGameStat(g.id, pid, "pitching", stat, toNonNegNum(e.target.value))
+                  }
+                />
               )}
             </td>
           );
@@ -1112,7 +1070,9 @@ const BoxScore = () => (
                         {Object.keys(initBaserun()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.baserunning as any)[stat]) : (
-                              <NumCell value={toNonNegNum((cur.baserunning as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "baserunning", stat, n)} />
+                              <input type="number" min={0} className={IN_NUM_GRID}
+                                value={toNonNegNum((cur.baserunning as any)[stat])}
+                                onChange={(e) => updateGameStat(g.id, pid, "baserunning", stat, toNonNegNum(e.target.value))} />
                             )}
                           </td>
                         ))}
@@ -1130,7 +1090,9 @@ const BoxScore = () => (
                         {Object.keys(initFielding()).map((stat) => (
                           <td key={stat} className="border px-2 py-1 text-center">
                             {readOnly ? toNonNegNum((cur.fielding as any)[stat]) : (
-                              <NumCell value={toNonNegNum((cur.fielding as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "fielding", stat, n)} />
+                              <input type="number" min={0} className={IN_NUM_GRID}
+                                value={toNonNegNum((cur.fielding as any)[stat])}
+                                onChange={(e) => updateGameStat(g.id, pid, "fielding", stat, toNonNegNum(e.target.value))} />
                             )}
                           </td>
                         ))}
@@ -1158,7 +1120,8 @@ const BoxScore = () => (
                   {g.innings.map((v, i) => (
                     <td key={i} className="border px-2 py-1 text-center">
                       {g.locked ? toNonNegNum(v) : (
-                        <NumCell value={toNonNegNum(v)} onCommit={(n) => updateInning(g.id, i, n)} />
+                        <input type="number" min={0} className="w-14 border rounded px-1 py-0.5 text-right"
+                               value={toNonNegNum(v)} onChange={(e) => updateInning(g.id, i, toNonNegNum(e.target.value))} />
                       )}
                     </td>
                   ))}
@@ -1226,7 +1189,42 @@ const BoxScore = () => (
     const METRICS = ["AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"];
     const CHART_METRICS = ["AVG","OBP","SLG","OPS","ERA","WHIP","K9","FPCT"];
     const colors = ["#8884d8","#82ca9d","#ffc658","#ff8a65","#90caf9"];
-const makeRow = (stat: string) => {
+    const TrendTab = () => {
+  // 把每場的隊伍 OPS/ERA 做成序列
+  const series = useMemo(() => {
+    return games.map(g => {
+      // 全隊合併：把這場所有人累加成一個 triple
+      const sum = emptyTriple();
+      g.lineup.forEach(pid => {
+        const cur = g.stats[pid]; if (!cur) return;
+        (Object.keys(sum.batting)  as (keyof Batting)[] ).forEach(k => (sum.batting[k]  += toNonNegNum((cur.batting  as any)[k])));
+        (Object.keys(sum.pitching) as (keyof Pitching)[]).forEach(k => (sum.pitching[k] += toNonNegNum((cur.pitching as any)[k])));
+        (Object.keys(sum.fielding) as (keyof Fielding)[]).forEach(k => (sum.fielding[k] += toNonNegNum((cur.fielding as any)[k])));
+        (Object.keys(sum.baserunning) as (keyof Baserun)[]).forEach(k => (sum.baserunning[k] += toNonNegNum((cur.baserunning as any)[k])));
+      });
+      const s = calcStats(sum.batting, sum.pitching, sum.fielding, sum.baserunning);
+      return { game: `${g.date} vs ${g.opponent}`, OPS: Number(s.OPS), ERA: Number(s.ERA) };
+    });
+  }, [games]);
+
+  return (
+    <div className="space-y-4">
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={series}>
+          <XAxis dataKey="game" tick={false} />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Line type="monotone" dataKey="OPS" />
+          <Line type="monotone" dataKey="ERA" />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+
+    const makeRow = (stat: string) => {
       const row: Record<string, number | string> = { stat };
       compareLive.forEach((id) => {
         const p = players.find((x) => x.id === id); if (!p) return;
@@ -1304,7 +1302,7 @@ const makeRow = (stat: string) => {
 // --- 趨勢圖分頁（放在 Compare 後、ExportPanel 前） ---
 type TrendTabProps = { games: Game[] };
 
-const TrendTab = ({ games }: TrendTabProps) => {
+const TrendTab: React.FC<TrendTabProps> = ({ games }) => {
   const data = useMemo(() => {
     return games.map((g) => {
       // 全隊合計：一場的 OPS / ERA
