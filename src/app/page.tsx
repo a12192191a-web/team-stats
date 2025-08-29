@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
@@ -252,9 +252,9 @@ useEffect(() => {
 
   return (
     <input
-      type="number"
-      min={0}
-      step={1}
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
       className={IN_NUM_GRID}
       value={text}
       onChange={(e) => {
@@ -279,9 +279,36 @@ useEffect(() => {
 
 /* ---------------- 資料欄位分離：比賽「中繼/中英文」文字輸入 ---------------- */
 type MetaTextProps = { value: string; placeholder?: string; onCommit: (v: string) => void; className?: string };
-function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
+const MetaText = memo(function MetaText({ value, placeholder, onCommit, className = "border px-2 py-1 rounded" }: MetaTextProps) {
   const [t, setT] = useState(value ?? "");
-  useEffect(() => { setT(value ?? ""); }, [value]);
+  const ref = useRef<HTMLInputElement | null>(null);
+  const dirtyRef = useRef(false);
+  useEffect(() => {
+    const isFocused = typeof document !== "undefined" && ref.current === document.activeElement;
+    if (isFocused || dirtyRef.current) return;
+    setT(value ?? "");
+  }, [value]);
+  return (
+    <input
+      ref={ref}
+      type="text"
+      placeholder={placeholder}
+      value={t}
+      onChange={(e) => { dirtyRef.current = true; setT(e.target.value); }}
+      onBlur={() => { dirtyRef.current = false; onCommit(t.trim()); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          dirtyRef.current = false;
+          onCommit(t.trim());
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      className={className}
+    />
+  );
+});, [value]);
   return (
     <input
       type="text"
