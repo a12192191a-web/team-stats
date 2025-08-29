@@ -6,7 +6,6 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
-import Image from "next/image";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 /* =========================================================
    共用 class
@@ -1111,7 +1110,7 @@ const BoxScore = () => (
                   {g.innings.map((v, i) => (
                     <td key={i} className="border px-2 py-1 text-center">
                       {g.locked ? toNonNegNum(v) : (
-                        <input type="number" min={0} className="w-14 border rounded px-1 py-0.5 text-right"
+                        <input type="number" min={0} className={IN_NUM_GRID}
                                value={toNonNegNum(v)} onChange={(e) => updateInning(g.id, i, toNonNegNum(e.target.value))} />
                       )}
                     </td>
@@ -1180,42 +1179,7 @@ const BoxScore = () => (
     const METRICS = ["AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"];
     const CHART_METRICS = ["AVG","OBP","SLG","OPS","ERA","WHIP","K9","FPCT"];
     const colors = ["#8884d8","#82ca9d","#ffc658","#ff8a65","#90caf9"];
-    const TrendTab = () => {
-  // 把每場的隊伍 OPS/ERA 做成序列
-  const series = useMemo(() => {
-    return games.map(g => {
-      // 全隊合併：把這場所有人累加成一個 triple
-      const sum = emptyTriple();
-      g.lineup.forEach(pid => {
-        const cur = g.stats[pid]; if (!cur) return;
-        (Object.keys(sum.batting)  as (keyof Batting)[] ).forEach(k => (sum.batting[k]  += toNonNegNum((cur.batting  as any)[k])));
-        (Object.keys(sum.pitching) as (keyof Pitching)[]).forEach(k => (sum.pitching[k] += toNonNegNum((cur.pitching as any)[k])));
-        (Object.keys(sum.fielding) as (keyof Fielding)[]).forEach(k => (sum.fielding[k] += toNonNegNum((cur.fielding as any)[k])));
-        (Object.keys(sum.baserunning) as (keyof Baserun)[]).forEach(k => (sum.baserunning[k] += toNonNegNum((cur.baserunning as any)[k])));
-      });
-      const s = calcStats(sum.batting, sum.pitching, sum.fielding, sum.baserunning);
-      return { game: `${g.date} vs ${g.opponent}`, OPS: Number(s.OPS), ERA: Number(s.ERA) };
-    });
-  }, [games]);
-
-  return (
-    <div className="space-y-4">
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={series}>
-          <XAxis dataKey="game" tick={false} />
-          <YAxis />
-          <Tooltip />
-          <Legend />
-          <Line type="monotone" dataKey="OPS" />
-          <Line type="monotone" dataKey="ERA" />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
-
-
-    const makeRow = (stat: string) => {
+const makeRow = (stat: string) => {
       const row: Record<string, number | string> = { stat };
       compareLive.forEach((id) => {
         const p = players.find((x) => x.id === id); if (!p) return;
@@ -1293,7 +1257,7 @@ const BoxScore = () => (
 // --- 趨勢圖分頁（放在 Compare 後、ExportPanel 前） ---
 type TrendTabProps = { games: Game[] };
 
-const TrendTab: React.FC<TrendTabProps> = ({ games }) => {
+const TrendTab = ({ games }: TrendTabProps) => {
   const data = useMemo(() => {
     return games.map((g) => {
       // 全隊合計：一場的 OPS / ERA
