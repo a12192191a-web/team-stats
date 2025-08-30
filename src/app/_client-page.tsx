@@ -1158,10 +1158,21 @@ const mismatch = stat === "PC" &&
   (toNonNegNum((cur.pitching as any).S) + toNonNegNum((cur.pitching as any).B) !== toNonNegNum(rawValue));
 
 return (
-  <td key={stat} className={`border px-2 py-1 text-center ${mismatch ? "text-red-600 font-semibold" : ""}`}>
-    {readOnly ? (
-      isIP ? formatIpDisplay(ipToInnings(rawValue)) : toNonNegNum(rawValue)
-    ) : (
+<td
+  key={stat}
+  className={`border px-2 py-1 text-center ${
+    stat === "PC" &&
+    (toNonNegNum((cur.pitching as any)?.S) + toNonNegNum((cur.pitching as any)?.B) !==
+      toNonNegNum(rawValue))
+      ? "text-red-600 font-semibold"
+      : ""
+  }`}
+>
+  {readOnly ? (
+    stat === "IP"
+      ? formatIpDisplay(ipToInnings(rawValue))
+      : toNonNegNum(rawValue)
+  ) : (
 
 <input
   type="number"
@@ -1192,9 +1203,12 @@ return (
 />
 
       ) : (
-                 <NumCell value={toNonNegNum(rawValue)} onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)} />
-    )}
-  </td>
+ <NumCell
+      value={toNonNegNum(rawValue)}
+      onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)}
+    />
+  )}
+</td>
 );
         })}
       </tr>
