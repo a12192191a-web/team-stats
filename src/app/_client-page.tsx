@@ -832,11 +832,7 @@ const BoxScore = () => (
         teamE += toNonNegNum(cur.fielding.E);
       });
       const teamR = g.innings.reduce((a, b) => a + toNonNegNum(b), 0);
-      
-
-  const d = getTextDraft(g);
-
-      return (
+return (
         <div key={g.id} className="border rounded p-3 bg-white space-y-4">
           {/* 標題列 + 匯出按鈕 */}
           <div className="flex items-center gap-3">
