@@ -1,5 +1,4 @@
 "use client";
-"use client";
 
 // 1) 版本碼 & 版本時間（來自 next.config.mjs）
 const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
@@ -46,11 +45,7 @@ const initBatting = () => ({
   HR: 0, BB: 0, SO: 0, HBP: 0, SF: 0, SH: 0,
   GO: 0, FO: 0, R: 0, RBI: 0,
 });
-const initPitching = () => ({
-  IP: 0, H: 0, ER: 0, BB: 0, K: 0, HR: 0, AB: 0,
-  S: 0, B: 0,   // ← 新增
-  PC: 0
-});
+const initPitching = () => ({ IP: 0, H: 0, ER: 0, BB: 0, K: 0, HR: 0, AB: 0, PC: 0 });
 const initFielding = () => ({ PO: 0, A: 0, E: 0 });
 const initBaserun  = () => ({ SB: 0, CS: 0 });
 
@@ -362,9 +357,6 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
   const KBB  = safeDiv(toNonNegNum(pitching.K), toNonNegNum(pitching.BB), 2);
   const OBA  = safeDiv(toNonNegNum(pitching.H), toNonNegNum(pitching.AB), 3);
   const PC   = toNonNegNum(pitching.PC);
-  const S = toNonNegNum(pitching.S);
-const B = toNonNegNum(pitching.B);
-const StrikePct = S + B > 0 ? ((S / (S + B)) * 100).toFixed(1) + "%" : "0%";
 
   const FPCT = toNonNegNum(fielding.PO) + toNonNegNum(fielding.A) + toNonNegNum(fielding.E) > 0
     ? ((toNonNegNum(fielding.PO) + toNonNegNum(fielding.A)) / (toNonNegNum(fielding.PO) + toNonNegNum(fielding.A) + toNonNegNum(fielding.E))).toFixed(3)
@@ -376,7 +368,7 @@ const StrikePct = S + B > 0 ? ((S / (S + B)) * 100).toFixed(1) + "%" : "0%";
 
   return { AB, H, AVG, OBP, SLG, OPS, ERA, WHIP, K9, FIP, FPCT, PA, TB, TOB, BBK, RC,
            R: toNonNegNum(batting.R), RBI: toNonNegNum(batting.RBI), SH: toNonNegNum(batting.SH),
-           SB, CS, SBP, BB9, H9, KBB, OBA,S, B, StrikePct, PC };
+           SB, CS, SBP, BB9, H9, KBB, OBA, PC };
 }
 
 /* =========================================================
@@ -385,29 +377,7 @@ const StrikePct = S + B > 0 ? ((S / (S + B)) * 100).toFixed(1) + "%" : "0%";
 export default function Home() {
   const [topTab, setTopTab] = useState<"players" | "features">("players");
   const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend">("box");
-  const [textDraft, setTextDraft] = useState<
-  Record<number, { season: string; tag: string; opponent: string }>
->({});
-
-function getTextDraft(g: Game) {
-  const d = textDraft[g.id] || {};
-  return {
-    season: d.season ?? g.season ?? "",
-    tag: d.tag ?? g.tag ?? "",
-    opponent: d.opponent ?? g.opponent ?? "",
-  };
-}
-
-
-const setDraft = (gid: number, patch: Partial<{season:string; tag:string; opponent:string}>) =>
-  setTextDraft(d => ({ ...d, [gid]: { ...(d[gid] || {}), ...patch } }));
-
-const commitDraft = (gid: number) => {
-  const d = textDraft[gid]; if (!d) return;
-  setGames(prev => prev.map(x => x.id === gid ? { ...x, season: d.season, tag: d.tag, opponent: d.opponent } : x));
-};
-
-  // SSR/CSR 一致：初值一律空；掛載後再載入
+  // (removed unused textDraft/getTextDraft/setDraft/commitDraft)// SSR/CSR 一致：初值一律空；掛載後再載入
   const [players, setPlayers] = useState<Player[]>([]);
   const [games,   setGames]   = useState<Game[]>([]);
   const [compare, setCompare] = useState<number[]>([]);
@@ -487,7 +457,9 @@ const commitDraft = (gid: number) => {
       'postgres_changes',
       { event: '*', schema: 'public', table: 'app_state', filter: 'id=eq.default' },
       (payload) => {
-        const ts = new Date((payload as any).commit_timestamp).getTime?.() ?? 0;
+        const tsRaw = (payload as any).commit_timestamp;
+        const tsMs = new Date(tsRaw).getTime();
+        const ts = Number.isFinite(tsMs) ? tsMs : 0;
         if (ts && ts <= lastSaveAtRef.current + 200) return; // ← 自己剛存的那筆，略過
         loadFromCloud();
       }
@@ -501,8 +473,6 @@ const commitDraft = (gid: number) => {
 
 
   /* ---------------- Navbar ---------------- */
-
-const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
 
 async function hardRefresh() {
   // 以版本參數組出回跳網址
@@ -611,7 +581,7 @@ const addGame = () => {
 };
 
   const lockGame = (gid: number) => {
-    commitDraft(gid); // ← 加這行
+    // (draft removed)
   if (!confirm("存檔後將無法再編輯此場比賽，確定存檔？")) return;
 
   setGames((prev) => prev.map((g) => {
@@ -663,32 +633,14 @@ const addGame = () => {
     setGames(prev => prev.filter(x => x.id !== gid));
   };
 
-const updateGameStat = (gid: number, pid: number, section: keyof Triple, key: string, val: number) => {
-  const safeVal = Math.max(0, Number(val) || 0);
-  setGames((prev) => prev.map((g) => {
-    if (g.id !== gid || g.locked) return g;
-    const prevTriple = g.stats[pid] ?? emptyTriple();
-
-    // 先算出該 section 的下一版
-    const nextSection: any = { ...(prevTriple as any)[section], [key]: safeVal };
-
-    // 若是投手的 S/B，順手更新 PC = S + B
-    if (section === "pitching" && (key === "S" || key === "B")) {
-      const S = Number(nextSection.S ?? 0);
-      const B = Number(nextSection.B ?? 0);
-      nextSection.PC = Math.max(0, S + B);
-    }
-
-    return {
-      ...g,
-      stats: {
-        ...g.stats,
-        [pid]: { ...prevTriple, [section]: nextSection }
-      }
-    };
-  }));
-};
-
+  const updateGameStat = (gid: number, pid: number, section: keyof Triple, key: string, val: number) => {
+    const safeVal = Math.max(0, Number(val) || 0);
+    setGames((prev) => prev.map((g) => {
+      if (g.id !== gid || g.locked) return g;
+      const prevTriple = g.stats[pid] ?? emptyTriple();
+      return { ...g, stats: { ...g.stats, [pid]: { ...prevTriple, [section]: { ...(prevTriple as any)[section], [key]: safeVal } } } };
+    }));
+  };
 
   const updateInning = (gid: number, idx: number, val: number) => {
     const safeVal = Math.max(0, Number(val) || 0);
@@ -758,43 +710,36 @@ const updateGameStat = (gid: number, pid: number, section: keyof Triple, key: st
   };
 
   const exportCSV = () => {
-    const headers = ["Name","Pos","AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT","P_S","P_B","P_StrikePct"];
+    const headers = ["Name","Pos","AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"];
     let csv = headers.join(",") + "\n";
     players.forEach((p) => {
       const s = calcStats(p.batting, p.pitching, p.fielding, p.baserunning);
-      const isP = p.positions.includes("P");
-csv += [
-  csvText(p.name),
-  csvText(p.positions.join("/")),
-  s.AB, s.H, s.AVG, s.OBP, s.SLG, s.OPS,
-  s.ERA, s.WHIP, s.K9, s.FIP, s.FPCT,
-  isP ? s.S : "-", isP ? s.B : "-", isP ? s.StrikePct : "-"
-].join(",") + "\n";
-
-});
+      csv += [
+        csvText(p.name),
+        csvText(p.positions.join("/")),
+        s.AB, s.H, s.AVG, s.OBP, s.SLG, s.OPS, s.ERA, s.WHIP, s.K9, s.FIP, s.FPCT
+      ].join(",") + "\n";
+    });
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob); const a = document.createElement("a");
     a.href = url; a.download = "rs-baseball.csv"; a.click(); URL.revokeObjectURL(url);
   };
 
   const exportGameCSV = (g: Game) => {
-    const headers = ["Player","Pos","AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT","R","RBI","TB","TOB","BBK","SB","CS","SBP","P_S","P_B","P_StrikePct","PC"];
+    const headers = ["Player","Pos","AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT","R","RBI","TB","TOB","BBK","SB","CS","SBP","PC"];
     let csv = headers.join(",") + "\n";
     g.lineup.forEach((pid) => {
       const { name, positions } = getNameAndPositions(players, g, pid);
       const cur = g.stats[pid] ?? emptyTriple();
       const s = calcStats(cur.batting, cur.pitching, cur.fielding, cur.baserunning);
       const isP = positions.includes("P");
-     csv += [
-  csvText(name),
-  csvText(positions.join("/")),
-  s.AB, s.H, s.AVG, s.OBP, s.SLG, s.OPS,
-  isP ? s.ERA : "-", isP ? s.WHIP : "-", isP ? s.K9 : "-", isP ? s.FIP : "-", s.FPCT,
-  s.R, s.RBI, s.TB, s.TOB, s.BBK, s.SB, s.CS, s.SBP,
-  isP ? s.S : "-", isP ? s.B : "-", isP ? s.StrikePct : "-",
-  isP ? s.PC : "-"
-].join(",") + "\n";
-
+      csv += [
+        csvText(name),
+        csvText(positions.join("/")),
+        s.AB, s.H, s.AVG, s.OBP, s.SLG, s.OPS,
+        isP ? s.ERA : "-", isP ? s.WHIP : "-", isP ? s.K9 : "-", isP ? s.FIP : "-", s.FPCT,
+        s.R, s.RBI, s.TB, s.TOB, s.BBK, s.SB, s.CS, s.SBP, isP ? s.PC : "-"
+      ].join(",") + "\n";
     });
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob); const a = document.createElement("a");
@@ -909,7 +854,7 @@ const BoxScore = () => (
 {/* Season */}
 <MetaText
   placeholder="Season"
-  value={d.season}
+  value={g.season || ""}
   onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, season: v } : x))}
   className="border px-2 py-1 rounded"
 />
@@ -917,7 +862,7 @@ const BoxScore = () => (
 {/* Tag */}
 <MetaText
   placeholder="Tag"
-  value={d.tag}
+  value={g.tag || ""}
   onCommit={(v) => setGames(prev => prev.map(x => x.id === g.id ? { ...x, tag: v } : x))}
   className="border px-2 py-1 rounded"
 />
@@ -1154,25 +1099,11 @@ const BoxScore = () => (
   const key = `${g.id}:${pid}`;                 // 每場比賽 × 球員 的唯一 key
   const rawValue = (cur.pitching as any)[stat]; // 現存的數值
 
-const mismatch = stat === "PC" &&
-  (toNonNegNum((cur.pitching as any).S) + toNonNegNum((cur.pitching as any).B) !== toNonNegNum(rawValue));
-
-return (
-<td
-  key={stat}
-  className={`border px-2 py-1 text-center ${
-    stat === "PC" &&
-    (toNonNegNum((cur.pitching as any)?.S) + toNonNegNum((cur.pitching as any)?.B) !==
-      toNonNegNum(rawValue))
-      ? "text-red-600 font-semibold"
-      : ""
-  }`}
->
-  {readOnly ? (
-    stat === "IP"
-      ? formatIpDisplay(ipToInnings(rawValue))
-      : toNonNegNum(rawValue)
-  ) : (
+  return (
+    <td key={stat} className="border px-2 py-1 text-center">
+     {readOnly ? (
+ isIP ? formatIpDisplay(ipToInnings(rawValue)) : toNonNegNum(rawValue)
+) : isIP ? (
 
 <input
   type="number"
@@ -1203,13 +1134,10 @@ return (
 />
 
       ) : (
- <NumCell
-      value={toNonNegNum(rawValue)}
-      onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)}
-    />
-  )}
-</td>
-);
+                <NumCell value={toNonNegNum(rawValue)} onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)} />
+              )}
+            </td>
+          );
         })}
       </tr>
     </tbody>
@@ -1548,10 +1476,7 @@ const TrendTab = ({ games }: TrendTabProps) => {
         <th className="border px-2 py-1">TB</th><th className="border px-2 py-1">TOB</th><th className="border px-2 py-1">RC</th><th className="border px-2 py-1">BB/K</th>
         <th className="border px-2 py-1">SB</th><th className="border px-2 py-1">CS</th><th className="border px-2 py-1">SB%</th>
         <th className="border px-2 py-1">ERA</th><th className="border px-2 py-1">WHIP</th><th className="border px-2 py-1">K/9</th><th className="border px-2 py-1">BB/9</th>
-        <th className="border px-2 py-1">H/9</th><th className="border px-2 py-1">K/BB</th><th className="border px-2 py-1">FIP</th><th className="border px-2 py-1">OBA</th><th className="border px-2 py-1">S</th>
-<th className="border px-2 py-1">B</th>
-<th className="border px-2 py-1">S%</th>
-<th className="border px-2 py-1">PC</th>
+        <th className="border px-2 py-1">H/9</th><th className="border px-2 py-1">K/BB</th><th className="border px-2 py-1">FIP</th><th className="border px-2 py-1">OBA</th><th className="border px-2 py-1">PC</th>
         <th className="border px-2 py-1">FPCT</th>
       </tr>
     </thead>
@@ -1599,10 +1524,6 @@ const TrendTab = ({ games }: TrendTabProps) => {
             <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.KBB  : "-"}</td>
             <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.FIP  : "-"}</td>
             <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.OBA  : "-"}</td>
-            <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.S : "-"}</td>
-<td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.B : "-"}</td>
-<td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.StrikePct : "-"}</td>
-
             <td className="border px-2 py-1 text-right">{p.positions.includes("P") ? s.PC   : "-"}</td>
             <td className="border px-2 py-1 text-right">{s.FPCT}</td>
           </tr>
