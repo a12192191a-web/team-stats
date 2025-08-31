@@ -415,14 +415,13 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
            SB, CS, SBP, BB9, H9, KBB, OBA, PC };
 }
 
-/* =========================================================
+/* ========================================================
    主頁
 ========================================================= */
 export default function Home() {
 useFloatingCheckUpdateButton(hardRefresh);
-
-
-
+ 
+  const [gamedayId, setGamedayId] = useState<string | number | null>(null);
   const [topTab, setTopTab] = useState<"players" | "features">("players");
   const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend">("box");
   // (removed unused textDraft/getTextDraft/setDraft/commitDraft)// SSR/CSR 一致：初值一律空；掛載後再載入
@@ -431,10 +430,9 @@ useFloatingCheckUpdateButton(hardRefresh);
   const [compare, setCompare] = useState<number[]>([]);
   const [mounted, setMounted] = useState(false);
   const [ipDraft, setIpDraft] = useState<Record<string, string>>({});
-  // 雲端 updated_at（做覆蓋確認用）
   const [cloudTS, setCloudTS] = useState<string | null>(null);
   const lastSaveAtRef = useRef(0); 
-  // 掛載後載入「本機」資料（你也可以改成預設讀雲端，見下方注解）
+  const [gamedayGame, setGamedayGame] = useState<Game | null>(null);
   useEffect(() => {
     setMounted(true);
     if (typeof window === "undefined") return;
@@ -548,6 +546,12 @@ const Navbar = () => (
         onClick={() => { setTopTab("features"); setSubTab("box"); }}
         className={`${BTN} ${topTab === "features" && subTab === "box" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >比賽紀錄</button>
+      
+
+      <button
+        onClick={() => setGamedayGame(g)}
+        className="px-3 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+      >Gameday</button>
 
       <button
         onClick={() => { setTopTab("features"); setSubTab("career"); }}
@@ -558,7 +562,7 @@ const Navbar = () => (
         onClick={() => { setTopTab("features"); setSubTab("compare"); }}
         className={`${BTN} ${topTab === "features" && subTab === "compare" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >球員對比</button>
-
+      
       <button
         onClick={() => { setTopTab("features"); setSubTab("export"); }}
         className={`${BTN} ${topTab === "features" && subTab === "export" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
@@ -566,9 +570,6 @@ const Navbar = () => (
     </div>
   </div>
 );
-
-
-
 
 
   /* ---------------- 新增 / 刪除（含保護） ---------------- */
@@ -1609,31 +1610,440 @@ const TrendTab = ({ games }: TrendTabProps) => {
     </div>
   );
 };
+// ===============================
+// GamedayPanel（常駐，顯示在「比賽數據」和「生涯數據」中間）
+// ===============================
+type GamedayPanelProps = {
+  games: any[];
+  players: any[];
+  value: string | number | null;
+  onChange: (id: string | number) => void;
+};
 
+function GamedayPanel({ games, players, value, onChange }: GamedayPanelProps) {
+  // 只看已鎖定的比賽
+  const locked = games.filter((g) => g.locked);
+  // 預設顯示最新一場已鎖定
+  const game =
+    locked.find((g) => g.id === value) ??
+    (locked.length ? locked[locked.length - 1] : null);
 
-  /* ---------------- Render ---------------- */
-  if (!mounted) {
-    // 首輪渲染固定骨架，避免 SSR/CSR diff
-    return <div suppressHydrationWarning className="text-gray-500 text-sm p-3">載入中…</div>;
+  // 沒有任何已鎖定比賽
+  if (!game) {
+    return (
+      <div className="my-4 p-4 border rounded-lg bg-white">
+        <div className="text-sm text-gray-600">尚無已鎖定比賽可顯示（請先在「比賽數據」把一場比賽鎖定）。</div>
+      </div>
+    );
   }
 
+  // 快取
+  const { lineup = [], stats = {} } = game;
+
+  // ---- 打擊小工具 ----
+  const hit = (b?: any) =>
+    (b?.["1B"] || 0) + (b?.["2B"] || 0) + (b?.["3B"] || 0) + (b?.HR || 0);
+  const ab = (b?: any) => hit(b) + (b?.SO || 0) + (b?.GO || 0) + (b?.FO || 0);
+
+  // 我方 R/H/E
+  const teamR = lineup.reduce((s: number, id: any) => s + toNonNegNum(stats[id]?.batting?.R), 0);
+  const teamH = lineup.reduce((s: number, id: any) => s + hit(stats[id]?.batting), 0);
+  const teamE = lineup.reduce((s: number, id: any) => s + toNonNegNum(stats[id]?.fielding?.E), 0);
+
+  // 對手 R/H/E（你未寫入前顯示 -）
+  const oppR = (game as any).oppR;
+  const oppH = (game as any).oppH;
+  const oppE = (game as any).oppE;
+
+  // 這場擔任投手的人（依該場 positions 判斷）
+  const pitcherIds = lineup.filter((pid: any) => {
+    const info = getNameAndPositions(players, game, pid);
+    return info.positions.includes("P");
+  });
+
+  // 可選清單（只列出已鎖定）
+const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  onChange(Number(e.target.value));
+};
+
+
+  const gameLabel = (g: any, idx: number) => {
+    const d = (g.date || g.created_at || "").toString().slice(0, 10);
+    return `${d || `#${idx + 1}`} vs ${g.opponent || "對手"}`;
+    };
+
   return (
-    <div className="min-h-screen bg-[#f6f7fb]">
-      <Navbar />
-      <div className="max-w-6xl mx-auto p-4 space-y-4">
-        {topTab === "players" && (<><PlayersForm /><PlayersList /></>)}
-        {topTab === "features" && (
-          <div className="space-y-4">
-           {subTab === "box" && <BoxScore />}
-{subTab === "compare" && <Compare />}
-{subTab === "export" && <ExportPanel />}
-{ /* Career 已在這裡 */ }
+    <section className="my-4 border rounded-xl bg-white overflow-hidden">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center gap-2 p-3 border-b bg-gray-50">
+        <h3 className="font-semibold text-base md:text-lg">Gameday</h3>
+        <div className="md:ml-auto flex items-center gap-2">
+          <span className="text-sm text-gray-600">選擇比賽：</span>
+          <select
+            value={game.id}
+            onChange={handleSelect}
+            className="px-2 py-1 border rounded bg-white text-sm"
+          >
+            {locked.map((g, i) => (
+              <option key={g.id} value={g.id}>{gameLabel(g, i)}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-{subTab === "career" && <CareerPanel />}
-
+      <div className="p-4 space-y-6">
+        {/* Scoreboard（上方比分 + W/L/S 佔位） */}
+        <div className="rounded-lg border overflow-hidden bg-white">
+          <div className="px-3 py-2 text-sm text-gray-600">
+            {game.date || ""}　vs {game.opponent || "對手"}
           </div>
-        )}
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-2 py-1 text-left">隊伍</th>
+                {[1,2,3,4,5,6,7,8,9].map((n) => (
+                  <th key={n} className="px-2 py-1 text-center">{n}</th>
+                ))}
+                <th className="px-2 py-1 text-center">R</th>
+                <th className="px-2 py-1 text-center">H</th>
+                <th className="px-2 py-1 text-center">E</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="border-t px-2 py-1">我們</td>
+                {Array.from({ length: 9 }).map((_, i) =>
+                  <td key={i} className="border-t text-center">-</td>
+                )}
+                <td className="border-t text-center font-semibold">{teamR}</td>
+                <td className="border-t text-center">{teamH}</td>
+                <td className="border-t text-center">{teamE}</td>
+              </tr>
+              <tr>
+                <td className="border-t px-2 py-1">{game.opponent || "對手"}</td>
+                {Array.from({ length: 9 }).map((_, i) =>
+                  <td key={i} className="border-t text-center">-</td>
+                )}
+                <td className="border-t text-center font-semibold">
+                  {Number.isFinite(oppR) ? oppR : "-"}
+                </td>
+                <td className="border-t text-center">{Number.isFinite(oppH) ? oppH : "-"}</td>
+                <td className="border-t text-center">{Number.isFinite(oppE) ? oppE : "-"}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="p-2 text-xs text-gray-600">
+            W：{game.winPid  ? getNameAndPositions(players, game, game.winPid).name  : "—"}　
+            L：{game.lossPid ? getNameAndPositions(players, game, game.lossPid).name : "—"}　
+            S：{game.savePid ? getNameAndPositions(players, game, game.savePid).name : "—"}
+          </div>
+        </div>
+
+        {/* 打者表（AB / R / H / RBI / BB / K） */}
+        <div className="overflow-x-auto">
+          <h4 className="font-semibold mb-2">打者</h4>
+          <table className="w-full text-sm bg-white border">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="border px-2 py-1 text-left">Batters</th>
+                <th className="border px-2 py-1">AB</th>
+                <th className="border px-2 py-1">R</th>
+                <th className="border px-2 py-1">H</th>
+                <th className="border px-2 py-1">RBI</th>
+                <th className="border px-2 py-1">BB</th>
+                <th className="border px-2 py-1">K</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lineup.map((pid: any) => {
+                const info = getNameAndPositions(players, game, pid);
+                const b = stats[pid]?.batting;
+                return (
+                  <tr key={pid}>
+                    <td className="border px-2 py-1">{info.name}</td>
+                    <td className="border px-2 py-1 text-right">{ab(b)}</td>
+                    <td className="border px-2 py-1 text-right">{toNonNegNum(b?.R)}</td>
+                    <td className="border px-2 py-1 text-right">{hit(b)}</td>
+                    <td className="border px-2 py-1 text-right">{toNonNegNum(b?.RBI)}</td>
+                    <td className="border px-2 py-1 text-right">{toNonNegNum(b?.BB)}</td>
+                    <td className="border px-2 py-1 text-right">{toNonNegNum(b?.SO)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 投手表（IP / H / R / ER / BB / K / HR / ERA） */}
+        <div className="overflow-x-auto">
+          <h4 className="font-semibold mb-2">投手</h4>
+          <table className="w-full text-sm bg-white border">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="border px-2 py-1 text-left">Pitchers</th>
+                <th className="border px-2 py-1">IP</th>
+                <th className="border px-2 py-1">H</th>
+                <th className="border px-2 py-1">R</th>
+                <th className="border px-2 py-1">ER</th>
+                <th className="border px-2 py-1">BB</th>
+                <th className="border px-2 py-1">K</th>
+                <th className="border px-2 py-1">HR</th>
+                <th className="border px-2 py-1">ERA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lineup
+                .filter((pid: any) => {
+                  const info = getNameAndPositions(players, game, pid);
+                  return info.positions.includes("P");
+                })
+                .map((pid: any) => {
+                  const info = getNameAndPositions(players, game, pid);
+                  const p = stats[pid]?.pitching;
+                  const ipIn = ipToInnings(p?.IP);
+                  const era = ipIn > 0 ? ((toNonNegNum(p?.ER) * 9) / ipIn).toFixed(2) : "-";
+                  return (
+                    <tr key={pid}>
+                      <td className="border px-2 py-1">{info.name}</td>
+                      <td className="border px-2 py-1 text-right">{formatIpDisplay(ipIn)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.H)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.R)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.ER)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.BB)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.K)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.HR)}</td>
+                      <td className="border px-2 py-1 text-right">{era}</td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// === Gameday Modal ===
+const GamedayModal = ({ game, players, onClose }: { game: Game; players: Player[]; onClose: () => void }) => {
+  const { lineup, stats } = game;
+
+  // 小工具：計算打擊用
+  const hit = (b?: Batting) =>
+    (b?.["1B"] || 0) + (b?.["2B"] || 0) + (b?.["3B"] || 0) + (b?.HR || 0);
+  const ab  = (b?: Batting) =>
+    hit(b) + (b?.SO || 0) + (b?.GO || 0) + (b?.FO || 0);
+
+  // 全隊合計（我們）
+  const teamR = lineup.reduce((s, id) => s + toNonNegNum(stats[id]?.batting?.R), 0);
+  const teamH = lineup.reduce((s, id) => s + hit(stats[id]?.batting), 0);
+  const teamE = lineup.reduce((s, id) => s + toNonNegNum(stats[id]?.fielding?.E), 0);
+
+  // 對手（若你日後在 game 上存了 oppR/oppH/oppE 就會自動顯示；先用佔位）
+  const oppR = (game as any).oppR;
+  const oppH = (game as any).oppH;
+  const oppE = (game as any).oppE;
+
+  // 這場有投手身分的球員（用 roster 快照或當前名單判斷）
+  const pitcherIds = lineup.filter((pid) => {
+    const info = getNameAndPositions(players, game, pid);
+    return info.positions.includes("P");
+  });
+
+  return (
+    <div className="fixed inset-0 z-[60]">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
+                      w-[min(980px,95vw)] max-h-[90vh] overflow-auto bg-white rounded-xl shadow-xl">
+        {/* Header */}
+        <div className="sticky top-0 flex items-center justify-between p-3 border-b bg-white">
+          <div className="font-semibold">
+            Gameday　{game.date}　vs {game.opponent}
+          </div>
+          <button onClick={onClose} className="px-2 py-1 rounded border">關閉</button>
+        </div>
+
+        <div className="p-4 space-y-6">
+          {/* Scoreboard */}
+          <div className="rounded-lg border overflow-hidden bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-2 py-1 text-left">隊伍</th>
+                  {[1,2,3,4,5,6,7,8,9].map((n) => (
+                    <th key={n} className="px-2 py-1 text-center">{n}</th>
+                  ))}
+                  <th className="px-2 py-1 text-center">R</th>
+                  <th className="px-2 py-1 text-center">H</th>
+                  <th className="px-2 py-1 text-center">E</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="border-t px-2 py-1">我們</td>
+                  {Array.from({ length: 9 }).map((_, i) =>
+                    <td key={i} className="border-t text-center">-</td>
+                  )}
+                  <td className="border-t text-center font-semibold">{teamR}</td>
+                  <td className="border-t text-center">{teamH}</td>
+                  <td className="border-t text-center">{teamE}</td>
+                </tr>
+                <tr>
+                  <td className="border-t px-2 py-1">{game.opponent || "對手"}</td>
+                  {Array.from({ length: 9 }).map((_, i) =>
+                    <td key={i} className="border-t text-center">-</td>
+                  )}
+                  <td className="border-t text-center font-semibold">
+                    {Number.isFinite(oppR) ? oppR : "-"}
+                  </td>
+                  <td className="border-t text-center">
+                    {Number.isFinite(oppH) ? oppH : "-"}
+                  </td>
+                  <td className="border-t text-center">
+                    {Number.isFinite(oppE) ? oppE : "-"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div className="p-2 text-xs text-gray-600">
+              W：{game.winPid  ? getNameAndPositions(players, game, game.winPid).name  : "—"}　
+              L：{game.lossPid ? getNameAndPositions(players, game, game.lossPid).name : "—"}　
+              S：{game.savePid ? getNameAndPositions(players, game, game.savePid).name : "—"}
+            </div>
+          </div>
+
+          {/* 打者表 */}
+          <div className="overflow-x-auto">
+            <h4 className="font-semibold mb-2">打者</h4>
+            <table className="w-full text-sm bg-white border">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="border px-2 py-1 text-left">Batters</th>
+                  <th className="border px-2 py-1">AB</th>
+                  <th className="border px-2 py-1">R</th>
+                  <th className="border px-2 py-1">H</th>
+                  <th className="border px-2 py-1">RBI</th>
+                  <th className="border px-2 py-1">BB</th>
+                  <th className="border px-2 py-1">K</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineup.map((pid) => {
+                  const info = getNameAndPositions(players, game, pid);
+                  const b = stats[pid]?.batting;
+                  return (
+                    <tr key={pid}>
+                      <td className="border px-2 py-1">{info.name}</td>
+                      <td className="border px-2 py-1 text-right">{ab(b)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(b?.R)}</td>
+                      <td className="border px-2 py-1 text-right">{hit(b)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(b?.RBI)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(b?.BB)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(b?.SO)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 投手表 */}
+          <div className="overflow-x-auto">
+            <h4 className="font-semibold mb-2">投手</h4>
+            <table className="w-full text-sm bg-white border">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="border px-2 py-1 text-left">Pitchers</th>
+                  <th className="border px-2 py-1">IP</th>
+                  <th className="border px-2 py-1">H</th>
+                  <th className="border px-2 py-1">R</th>
+                  <th className="border px-2 py-1">ER</th>
+                  <th className="border px-2 py-1">BB</th>
+                  <th className="border px-2 py-1">K</th>
+                  <th className="border px-2 py-1">HR</th>
+                  <th className="border px-2 py-1">ERA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pitcherIds.map((pid) => {
+                  const info = getNameAndPositions(players, game, pid);
+                  const p = stats[pid]?.pitching;
+                  const ipIn = ipToInnings(p?.IP);
+                  return (
+                    <tr key={pid}>
+                      <td className="border px-2 py-1">{info.name}</td>
+                      <td className="border px-2 py-1 text-right">{formatIpDisplay(ipIn)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.H)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.R)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.ER)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.BB)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.K)}</td>
+                      <td className="border px-2 py-1 text-right">{toNonNegNum(p?.HR)}</td>
+                      <td className="border px-2 py-1 text-right">
+                      {ipIn > 0 ? ((toNonNegNum(p?.ER) * 9) / ipIn).toFixed(2) : "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );
+};
+
+
+  /* ---------------- Render ---------------- */
+if (!mounted) {
+  // 首輪渲染固定骨架，避免 SSR/CSR diff
+  return (
+    <div suppressHydrationWarning className="text-gray-500 text-sm p-3">
+      載入中…
+    </div>
+  );
 }
+
+return (
+  <div className="min-h-screen bg-[#f6f7fb]">
+    <Navbar />
+    <div className="max-w-6xl mx-auto p-4 space-y-4">
+      {topTab === "players" && (
+        <>
+          <PlayersForm />
+          <PlayersList />
+        </>
+      )}
+
+      {topTab === "features" && (
+        <div className="space-y-4">
+          {subTab === "box" && <BoxScore />}
+
+          {(subTab === "box" || subTab === "career") && (
+            <GamedayPanel
+              games={games}
+              players={players}
+              value={gamedayId}
+              onChange={setGamedayId}
+            />
+          )}
+
+          {subTab === "career" && <CareerPanel />}
+          {subTab === "compare" && <Compare />}
+          {subTab === "export" && <ExportPanel />}
+        </div>
+      )}
+
+      {/* ✅ Modal 放在最外層容器（與 features 同一層） */}
+      {gamedayGame && (
+        <GamedayModal
+          game={gamedayGame}
+          players={players}
+          onClose={() => setGamedayGame(null)}
+        />
+      )}
+    </div>
+  </div>
+);
