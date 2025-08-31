@@ -560,11 +560,6 @@ const Navbar = () => (
       >球員對比</button>
 
       <button
-  onClick={() => { setTopTab("features"); setSubTab("trend"); }}
-  className={`${BTN} ${topTab === "features" && subTab === "trend" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
->趨勢圖</button>
-
-      <button
         onClick={() => { setTopTab("features"); setSubTab("export"); }}
         className={`${BTN} ${topTab === "features" && subTab === "export" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >匯出</button>
@@ -1301,6 +1296,8 @@ return (
     const METRICS = ["AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"];
     const CHART_METRICS = ["AVG","OBP","SLG","OPS","ERA","WHIP","K9","FPCT"];
     const colors = ["#8884d8","#82ca9d","#ffc658","#ff8a65","#90caf9"];
+    const [compareView, setCompareView] = useState<"table" | "trend">("table");
+
 const makeRow = (stat: string) => {
       const row: Record<string, number | string> = { stat };
       compareLive.forEach((id) => {
@@ -1326,53 +1323,95 @@ const makeRow = (stat: string) => {
             </label>
           ))}
         </div>
+{/* 表格 / 趨勢圖 切換鈕（放在選人區後、靠右） */}
+<div className="flex items-center">
+  <div className="ml-auto flex items-center gap-1 bg-slate-100 rounded-full p-1">
+    <button
+      onClick={() => setCompareView("table")}
+      className={`px-3 py-1 rounded-full text-xs md:text-sm ${
+        compareView === "table" ? "bg-white shadow" : "opacity-70 hover:opacity-100"
+      }`}
+    >
+      表格
+    </button>
+    <button
+      onClick={() => setCompareView("trend")}
+      className={`px-3 py-1 rounded-full text-xs md:text-sm ${
+        compareView === "trend" ? "bg-white shadow" : "opacity-70 hover:opacity-100"
+      }`}
+    >
+      趨勢圖
+    </button>
+  </div>
+</div>
 
-        {compareLive.length >= 2 ? (
-          <>
-            <div className="overflow-x-auto">
-              <table className="border text-sm w-full bg-white">
-                <thead>
-                  <tr>
-                    <th className="border px-2 py-1">指標</th>
-                    {compareLive.map((id) => <th key={id} className="border px-2 py-1">{players.find((p) => p.id === id)?.name ?? `#${id}`}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {tableBody.map((row) => (
-                    <tr key={row.stat as string}>
-                      <td className="border px-2 py-1">{row.stat as string}</td>
-                      {compareLive.map((id) => {
-                        const name = players.find((p) => p.id === id)?.name;
-                        return <td key={id} className="border px-2 py-1 text-right">{name ? (row as any)[name] : "-"}</td>;
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={chartData}>
-                <XAxis dataKey="stat" /><YAxis /><Tooltip /><Legend />
-                {compareLive.map((id, i) => {
+       {compareLive.length >= 2 ? (
+  compareView === "table" ? (
+    <>
+      {/* 原本的表格 */}
+      <div className="overflow-x-auto">
+        <table className="border text-sm w-full bg-white">
+          <thead>
+            <tr>
+              <th className="border px-2 py-1">指標</th>
+              {compareLive.map((id) => (
+                <th key={id} className="border px-2 py-1">
+                  {players.find((p) => p.id === id)?.name ?? `#${id}`}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tableBody.map((row) => (
+              <tr key={row.stat as string}>
+                <td className="border px-2 py-1">{row.stat as string}</td>
+                {compareLive.map((id) => {
                   const name = players.find((p) => p.id === id)?.name;
-                  return name ? <Bar key={id} dataKey={name} fill={colors[i % colors.length]} /> : null;
+                  return (
+                    <td key={id} className="border px-2 py-1 text-right">
+                      {name ? (row as any)[name] : "-"}
+                    </td>
+                  );
                 })}
-              </BarChart>
-            </ResponsiveContainer>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-            <ResponsiveContainer width="100%" height={360}>
-              <RadarChart data={chartData}>
-                <PolarGrid /><PolarAngleAxis dataKey="stat" /><PolarRadiusAxis />
-                {compareLive.map((id, i) => {
-                  const name = players.find((p) => p.id === id)?.name;
-                  return name ? <Radar key={id} name={name} dataKey={name} stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.3} /> : null;
-                })}
-                <Legend />
-              </RadarChart>
-            </ResponsiveContainer>
-          </>
-        ) : <div className="text-sm text-gray-500">請至少勾選兩位球員進行對比。</div>}
+      {/* 原本的長條＋雷達（保留不動） */}
+      <ResponsiveContainer width="100%" height={320}>
+        <BarChart data={chartData}>
+          <XAxis dataKey="stat" /><YAxis /><Tooltip /><Legend />
+          {compareLive.map((id, i) => {
+            const name = players.find((p) => p.id === id)?.name;
+            return name ? <Bar key={id} dataKey={name} fill={colors[i % colors.length]} /> : null;
+          })}
+        </BarChart>
+      </ResponsiveContainer>
+
+      <ResponsiveContainer width="100%" height={360}>
+        <RadarChart data={chartData}>
+          <PolarGrid /><PolarAngleAxis dataKey="stat" /><PolarRadiusAxis />
+          {compareLive.map((id, i) => {
+            const name = players.find((p) => p.id === id)?.name;
+            return name ? (
+              <Radar key={id} name={name} dataKey={name}
+                stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.3} />
+            ) : null;
+          })}
+          <Legend />
+        </RadarChart>
+      </ResponsiveContainer>
+    </>
+  ) : (
+    // 這裡改成直接顯示趨勢圖（沿用你現有的 TrendTab）
+    <TrendTab games={games} />
+  )
+) : (
+  <div className="text-sm text-gray-500">請至少勾選兩位球員進行對比。</div>
+)}
+
       </div>
     );
   };
@@ -1587,7 +1626,6 @@ const TrendTab = ({ games }: TrendTabProps) => {
           <div className="space-y-4">
            {subTab === "box" && <BoxScore />}
 {subTab === "compare" && <Compare />}
-{subTab === "trend" && <TrendTab games={games} />}
 {subTab === "export" && <ExportPanel />}
 { /* Career 已在這裡 */ }
 
