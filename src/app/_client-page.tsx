@@ -28,51 +28,51 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-// === 懶人自動刷新 + 手動刷新按鈕 + 右下角浮動鈕 ===
-function RefreshButton() {
-  const router = useRouter();
-  return (
-    <button
-      onClick={() => router.refresh()}
-      className="px-3 py-1 rounded bg-black text-white shadow-md hover:opacity-90 active:scale-95"
-      title="重新整理資料"
-    >
-      🔄 重新整理
-    </button>
-  );
-}
-
-function useAutoRefresh(ms = 8000) {
+// 右下角「檢查更新」浮動按鈕（使用現有 BUILD / buildLabel）
+function useFloatingCheckUpdateButton() {
   const router = useRouter();
   useEffect(() => {
-    const id = setInterval(() => router.refresh(), ms);
-    return () => clearInterval(id);
-  }, [router, ms]);
-}
-
-// 不改 JSX 也能顯示右下角浮動鈕
-function useFloatingRefreshButton() {
-  const router = useRouter();
-  useEffect(() => {
-    const id = "refresh-float-btn";
+    const id = "check-update-float-btn";
     if (document.getElementById(id)) return;
+
     const btn = document.createElement("button");
     btn.id = id;
-    btn.textContent = "🔄 重新整理";
+    btn.type = "button";
+    btn.innerText = `檢查更新${buildLabel ? ` · ${buildLabel}` : ""}`;
+    btn.title = BUILD ? `版本 ${BUILD}${buildLabel ? ` · ${buildLabel}` : ""}` : "檢查更新";
+
+    // 樣式（右下角小圓角膠囊）
     btn.style.position = "fixed";
     btn.style.right = "12px";
     btn.style.bottom = "12px";
     btn.style.zIndex = "9999";
     btn.style.padding = "6px 10px";
-    btn.style.borderRadius = "8px";
-    btn.style.background = "#000";
+    btn.style.borderRadius = "9999px";
+    btn.style.background = "#111827";
     btn.style.color = "#fff";
-    btn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
-    btn.onclick = () => router.refresh();
+    btn.style.fontSize = "12px";
+    btn.style.lineHeight = "1";
+    btn.style.border = "1px solid rgba(255,255,255,0.08)";
+    btn.style.boxShadow = "0 6px 20px rgba(0,0,0,.25)";
+    btn.style.opacity = "0.85";
+    btn.style.cursor = "pointer";
+    btn.onmouseenter = () => (btn.style.opacity = "1");
+    btn.onmouseleave = () => (btn.style.opacity = "0.85");
+
+    // 點擊：優先用原本的 hardRefresh，沒有就 router.refresh()
+    btn.onclick = () => {
+      try {
+        // @ts-ignore
+        if (typeof hardRefresh === "function") return (hardRefresh as any)();
+      } catch {}
+      router.refresh();
+    };
+
     document.body.appendChild(btn);
-    return () => { btn.remove(); };
+    return () => btn.remove();
   }, [router]);
 }
+
 
 /* =========================================================
    共用 class
@@ -421,8 +421,7 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
    主頁
 ========================================================= */
 export default function Home() {
-    useAutoRefresh(8000);       // 每 8 秒自動刷新
-  useFloatingRefreshButton(); // 右下角浮動🔄按鈕
+  useFloatingCheckUpdateButton();
 
   const [topTab, setTopTab] = useState<"players" | "features">("players");
   const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend">("box");
@@ -565,17 +564,6 @@ const Navbar = () => (
   className={`${BTN} ${topTab === "features" && subTab === "trend" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
 >趨勢圖</button>
 
-<button
-  onClick={hardRefresh}
-  className="px-3 py-1 rounded border text-xs md:text-sm bg-white text-slate-900"
-  title={BUILD ? `版本 ${BUILD}` : "檢查更新"}
->
-  檢查更新{buildLabel ? ` · ${buildLabel}` : ""}
-</button>
-
-
-
-
       <button
         onClick={() => { setTopTab("features"); setSubTab("export"); }}
         className={`${BTN} ${topTab === "features" && subTab === "export" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
@@ -583,7 +571,7 @@ const Navbar = () => (
     </div>
   </div>
 );
-<RefreshButton />
+
 
 
 
