@@ -28,8 +28,10 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-// 右下角「檢查更新」浮動按鈕（使用現有 BUILD / buildLabel）
-function useFloatingCheckUpdateButton() {
+type VoidFn = () => void | Promise<void>;
+
+// 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
+function useFloatingCheckUpdateButton(onClick?: VoidFn) {
   const router = useRouter();
   useEffect(() => {
     const id = "check-update-float-btn";
@@ -41,7 +43,7 @@ function useFloatingCheckUpdateButton() {
     btn.innerText = `檢查更新${buildLabel ? ` · ${buildLabel}` : ""}`;
     btn.title = BUILD ? `版本 ${BUILD}${buildLabel ? ` · ${buildLabel}` : ""}` : "檢查更新";
 
-    // 樣式（右下角小圓角膠囊）
+    // 樣式
     btn.style.position = "fixed";
     btn.style.right = "12px";
     btn.style.bottom = "12px";
@@ -59,18 +61,15 @@ function useFloatingCheckUpdateButton() {
     btn.onmouseenter = () => (btn.style.opacity = "1");
     btn.onmouseleave = () => (btn.style.opacity = "0.85");
 
-    // 點擊：優先用原本的 hardRefresh，沒有就 router.refresh()
+    // 點擊：若外部有給回呼就用，否則 fallback 刷新
     btn.onclick = () => {
-      try {
-        // @ts-ignore
-        if (typeof hardRefresh === "function") return (hardRefresh as any)();
-      } catch {}
+      if (onClick) return void onClick();
       router.refresh();
     };
 
     document.body.appendChild(btn);
     return () => btn.remove();
-  }, [router]);
+  }, [router, onClick]);
 }
 
 
@@ -78,7 +77,6 @@ function useFloatingCheckUpdateButton() {
    共用 class
 ========================================================= */
 const BTN = "px-3 py-1 md:px-4 md:py-2 rounded";
-const IN_NUM = "w-16 md:w-20 h-9 md:h-10 border rounded px-1.5 text-right";
 // 在 IN_NUM 底下新增
 const IN_NUM_GRID =
   "min-w-[3rem] w-full h-9 md:h-10 border rounded px-1.5 text-right";
@@ -421,7 +419,9 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
    主頁
 ========================================================= */
 export default function Home() {
-  useFloatingCheckUpdateButton();
+useFloatingCheckUpdateButton(hardRefresh);
+
+
 
   const [topTab, setTopTab] = useState<"players" | "features">("players");
   const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend">("box");
