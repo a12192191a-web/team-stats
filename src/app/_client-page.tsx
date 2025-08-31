@@ -20,7 +20,7 @@ const buildLabel = (() => {
     }).format(d).replace(/\//g, "-");
   } catch { return ""; }
 })();
-
+import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -28,6 +28,52 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+// === 懶人自動刷新 + 手動刷新按鈕 + 右下角浮動鈕 ===
+function RefreshButton() {
+  const router = useRouter();
+  return (
+    <button
+      onClick={() => router.refresh()}
+      className="px-3 py-1 rounded bg-black text-white shadow-md hover:opacity-90 active:scale-95"
+      title="重新整理資料"
+    >
+      🔄 重新整理
+    </button>
+  );
+}
+
+function useAutoRefresh(ms = 8000) {
+  const router = useRouter();
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), ms);
+    return () => clearInterval(id);
+  }, [router, ms]);
+}
+
+// 不改 JSX 也能顯示右下角浮動鈕
+function useFloatingRefreshButton() {
+  const router = useRouter();
+  useEffect(() => {
+    const id = "refresh-float-btn";
+    if (document.getElementById(id)) return;
+    const btn = document.createElement("button");
+    btn.id = id;
+    btn.textContent = "🔄 重新整理";
+    btn.style.position = "fixed";
+    btn.style.right = "12px";
+    btn.style.bottom = "12px";
+    btn.style.zIndex = "9999";
+    btn.style.padding = "6px 10px";
+    btn.style.borderRadius = "8px";
+    btn.style.background = "#000";
+    btn.style.color = "#fff";
+    btn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
+    btn.onclick = () => router.refresh();
+    document.body.appendChild(btn);
+    return () => { btn.remove(); };
+  }, [router]);
+}
+
 /* =========================================================
    共用 class
 ========================================================= */
@@ -375,6 +421,9 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
    主頁
 ========================================================= */
 export default function Home() {
+    useAutoRefresh(8000);       // 每 8 秒自動刷新
+  useFloatingRefreshButton(); // 右下角浮動🔄按鈕
+
   const [topTab, setTopTab] = useState<"players" | "features">("players");
   const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend">("box");
   // (removed unused textDraft/getTextDraft/setDraft/commitDraft)// SSR/CSR 一致：初值一律空；掛載後再載入
@@ -534,6 +583,7 @@ const Navbar = () => (
     </div>
   </div>
 );
+<RefreshButton />
 
 
 
