@@ -137,6 +137,15 @@ type Game = {
       pitching: Record<number, Partial<Pitching>>;
       fielding: Record<number, Partial<Fielding>>;
     };
+type HalfFrame = {
+  pitcherPid?: number;
+  batting: Record<number, Partial<Batting>>;
+  baserunning: Record<number, Partial<Baserun>>;
+  pitching: Record<number, Partial<Pitching>>;
+  fielding: Record<number, Partial<Fielding>>;
+};
+type Frames = Array<{ top: HalfFrame; bottom: HalfFrame }>;
+
     bottom: {
       pitcherPid?: number;
       batting: Record<number, Partial<Batting>>;
@@ -812,23 +821,24 @@ const setStartDefense = (gid: number, v: boolean) => {
 
 type SectionKey = "batting" | "baserunning" | "pitching" | "fielding";
 const updateHalfStat = (
-  gid: number, inningIdx: number, half: "top"|"bottom",
-  section: SectionKey, pid: number, key: string, val: number
-) => {
-  const safe = Math.max(0, Number(val) || 0);
-  setGames(prev => prev.map(g => {
-    if (g.id !== gid || g.locked) return g;
-    const frames = (g.frames || Array(9).fill(0).map(()=>({ top:{ batting:{}, baserunning:{}, pitching:{}, fielding:{} }, bottom:{ batting:{}, baserunning:{}, pitching:{}, fielding:{} } }))).map(x => ({ top: { ...x.top, batting: { ...(x.top.batting||{}) }, baserunning: { ...(x.top.baserunning||{}) }, pitching: { ...(x.top.pitching||{}) }, fielding: { ...(x.top.fielding||{}) } }, bottom: { ...x.bottom, batting: { ...(x.bottom.batting||{}) }, baserunning: { ...(x.bottom.baserunning||{}) }, pitching: { ...(x.bottom.pitching||{}) }, fielding: { ...(x.bottom.fielding||{}) } } }));
-    const fh: any = frames[inningIdx][half];
-    fh[section] = { ...(fh[section] || {}) };
-    const obj = fh[section];
-    obj[pid] = { ...(obj[pid] || {}) };
-    obj[pid][key] = safe;
-    const next = { ...g, frames };
-    const agg = recomputeFromFrames(next);
-    return { ...next, stats: agg.stats, innings: agg.innings };
-  }));
-};
+    gid: number, inningIdx: number, half: "top"|"bottom",
+    section: SectionKey, pid: number, key: string, val: number
+  ) => {
+    const safe = Math.max(0, Number(val) || 0);
+    setGames(prev => prev.map(g => {
+      if (g.id !== gid || g.locked) return g;
+      const frames = ensureFrames(g.frames);
+      if (!frames[inningIdx]) frames[inningIdx] = { top: emptyHalf(), bottom: emptyHalf() };
+      const fh: any = frames[inningIdx][half];
+      fh[section] = { ...(fh[section] || {}) };
+      const obj = fh[section];
+      obj[pid] = { ...(obj[pid] || {}) };
+      obj[pid][key] = safe;
+      const next = { ...g, frames };
+      const agg = recomputeFromFrames(next);
+      return { ...next, stats: agg.stats, innings: agg.innings };
+    }));
+  };
 
 const setHalfPitcher = (gid: number, inningIdx: number, half: "top"|"bottom", pid: number|undefined) => {
   setGames(prev => prev.map(g => {
