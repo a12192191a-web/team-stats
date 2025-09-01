@@ -28,7 +28,7 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-type VoidFn = () => voidoid | Promise<void>;
+type VoidFn = () => void | Promise<void>;
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
 function useFloatingCheckUpdateButton(onClick?: VoidFn) {
