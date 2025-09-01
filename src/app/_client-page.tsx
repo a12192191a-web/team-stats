@@ -140,6 +140,7 @@ const STORAGE = {
   players: "rsbm.players.v2",
   games:   "rsbm.games.v2",
   compare: "rsbm.compare.v1",
+,
   compareSelH: "rsbm.compare.sel.h",
   compareSelP: "rsbm.compare.sel.p",
   compareSelF: "rsbm.compare.sel.f",
@@ -1302,6 +1303,66 @@ return (
     field: ["FPCT"],
   } as const;
 
+  // 本地備用：避免初始化函式名稱不一致造成編譯失敗
+  const initBaserunLocal = () => ({ SB: 0, CS: 0 });
+
+  // 以 games 聚合出指定球員的四大區總計（容錯多種欄位命名）
+  const sumNum = (a: any, b: any, k: string) => { a[k] = (Number(a[k]) || 0) + (Number(b[k]) || 0); };
+  const addAllNumbers = (dst: any, src: any) => { for (const k in src) if (typeof src[k] === "number") sumNum(dst, src, k); };
+
+  const normalizeLine = (line: any) => {
+    // K/SO 同義，統一到 SO
+    if (line && typeof line === "object") {
+      if (typeof line.K === "number" && typeof line.SO !== "number") line.SO = line.K;
+      if (typeof line.BF === "number" && typeof line.PA !== "number") line.PA = line.BF; // 假如有面對打者
+    }
+    return line;
+  };
+
+  const linesOf = (g: any, keys: string[]) => {
+    for (const k of keys) if (Array.isArray(g?.[k])) return g[k] as any[];
+    return [];
+  };
+
+  const pickId = (line: any) => (line?.playerId ?? line?.pid ?? line?.id);
+  const isPlayerLine = (line: any, id: number) => {
+    const pid = pickId(line);
+    return pid === id || String(pid) === String(id);
+  };
+
+  const aggregateFromGames = (playerId: number) => {
+    const b = initBatting();       // 打擊
+    const p = initPitching();      // 投手
+    const f = initFielding();      // 守備
+    const r = initBaserunLocal();  // 跑壘
+
+    for (const g of games) {
+      // 打者
+      for (const ln of linesOf(g, ["batters","hitters","batting","bats","boxBatting"])) {
+        const L = normalizeLine(ln);
+        if (isPlayerLine(L, playerId)) addAllNumbers(b, L);
+      }
+      // 投手
+      for (const ln of linesOf(g, ["pitchers","pitching","pit","boxPitching"])) {
+        const L = normalizeLine(ln);
+        if (isPlayerLine(L, playerId)) addAllNumbers(p, L);
+      }
+      // 守備
+      for (const ln of linesOf(g, ["fielding","fielders","boxFielding"])) {
+        const L = normalizeLine(ln);
+        if (isPlayerLine(L, playerId)) addAllNumbers(f, L);
+      }
+      // 跑壘
+      for (const ln of linesOf(g, ["baserunning","base","boxBaserun"])) {
+        const L = normalizeLine(ln);
+        if (isPlayerLine(L, playerId)) addAllNumbers(r, L);
+      }
+    }
+    return { batting: b, pitching: p, fielding: f, baserunning: r };
+  };
+
+
+
   // 哪些指標是「高者為佳」（未列出的預設 true）
   const higherIsBetter: Record<string, boolean> = {
     ERA: false, WHIP: false, BB9: false, H9: false, OBA: false, PC: false,
@@ -1335,7 +1396,8 @@ return (
     const row: Record<string, number | string> = { stat };
     compareLive.forEach((id) => {
       const p = players.find((x) => x.id === id); if (!p) return;
-      const s = calcStats(p.batting ?? initBatting(), p.pitching ?? initPitching(), p.fielding ?? initFielding(), p.baserunning ?? initBaserun());
+      const tot = aggregateFromGames(p.id);
+      const s = calcStats(tot.batting, tot.pitching, tot.fielding, tot.baserunning);
       const v = parseFloat((s as any)[stat]) || 0;
       row[p.name] = Number.isFinite(v) ? v : 0;
     });
