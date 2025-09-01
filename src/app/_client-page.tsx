@@ -127,6 +127,24 @@ type Game = {
   winPid?: number;   // ← 新增
   lossPid?: number;  // ← 新增
   savePid?: number;  // ← 新增
+
+  startDefense?: boolean; // true=先守（主隊）；false=先攻（客隊）
+  frames?: Array<{
+    top: {
+      pitcherPid?: number;
+      batting: Record<number, Partial<Batting>>;
+      baserunning: Record<number, Partial<Baserun>>;
+      pitching: Record<number, Partial<Pitching>>;
+      fielding: Record<number, Partial<Fielding>>;
+    };
+    bottom: {
+      pitcherPid?: number;
+      batting: Record<number, Partial<Batting>>;
+      baserunning: Record<number, Partial<Baserun>>;
+      pitching: Record<number, Partial<Pitching>>;
+      fielding: Record<number, Partial<Fielding>>;
+    };
+  }>;
 };
 
 
@@ -140,10 +158,7 @@ const STORAGE = {
   players: "rsbm.players.v2",
   games:   "rsbm.games.v2",
   compare: "rsbm.compare.v1",
-  compareSelH: "rsbm.compare.sel.h",
-  compareSelP: "rsbm.compare.sel.p",
-  compareSelF: "rsbm.compare.sel.f",
-};;
+};
 
 const toNonNegNum = (v: any) => {
   const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0;
@@ -192,6 +207,28 @@ function reviveGames(raw: any): Game[] {
         };
       });
     }
+// 預設 9 局、上下半局資料結構
+const emptyHalf = () => ({ pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} });
+const frames = Array.isArray(g?.frames) && g.frames.length
+  ? g.frames.map((fr: any) => ({
+      top: {
+        pitcherPid: fr?.top?.pitcherPid,
+        batting: fr?.top?.batting || {},
+        baserunning: fr?.top?.baserunning || {},
+        pitching: fr?.top?.pitching || {},
+        fielding: fr?.top?.fielding || {},
+      },
+      bottom: {
+        pitcherPid: fr?.bottom?.pitcherPid,
+        batting: fr?.bottom?.batting || {},
+        baserunning: fr?.bottom?.baserunning || {},
+        pitching: fr?.bottom?.pitching || {},
+        fielding: fr?.bottom?.fielding || {},
+      }
+    }))
+  : Array(9).fill(0).map(() => ({ top: emptyHalf(), bottom: emptyHalf() }));
+const startDefense = !!g?.startDefense;
+
    return {
   id: Number(g?.id),
   date: String(g?.date ?? ""),
@@ -200,6 +237,8 @@ function reviveGames(raw: any): Game[] {
   tag: g?.tag ?? "",                // ← 新增
   lineup: Array.isArray(g?.lineup) ? g.lineup.map((n: any) => Number(n)) : [],
   innings: Array.isArray(g?.innings) ? g.innings.map(toNonNegNum) : Array(9).fill(0),
+  frames,
+  startDefense,
   stats,
   locked: !!g?.locked,
   roster,
@@ -606,6 +645,8 @@ const addGame = () => {
   tag: "",               // ← 新增
   lineup: [],
   innings: Array(9).fill(0),
+  frames: Array(9).fill(0).map(() => ({ top: { pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} }, bottom: { pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} } })),
+  startDefense: true,
   stats: {},
   locked: false,
   roster: {},
@@ -707,6 +748,98 @@ const addGame = () => {
       return { ...x, lineup: arr.slice(0, 9) };
     }));
   };
+
+
+/* ---------------- 逐局：工具 ---------------- */
+const isOffenseHalf = (g: Game, half: "top" | "bottom") => {
+  return half === "top" ? !g.startDefense : !!g.startDefense;
+};
+
+const recomputeFromFrames = (g: Game) => {
+  const stats: Record<number, Triple> = {};
+  const innings: number[] = Array(9).fill(0);
+
+  const emptyT = (): Triple => ({ batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() });
+
+  const add = (pid: number, section: keyof Triple, key: string, val: number) => {
+    const t = stats[pid] ?? emptyT();
+    (t[section] as any)[key] = ((t[section] as any)[key] || 0) + (Number(val)||0);
+    stats[pid] = t;
+  };
+
+  g.frames?.forEach((fr, i) => {
+    (["top","bottom"] as const).forEach((half) => {
+      const data: any = (fr as any)[half];
+      const offense = isOffenseHalf(g, half);
+      if (offense) {
+        Object.keys(data.batting || {}).forEach((k) => {
+          const pid = Number(k);
+          const obj = data.batting[k] || {};
+          Object.keys(initBatting()).forEach((kk) => add(pid, "batting", kk, obj[kk] || 0));
+          innings[i] += Number(obj.R || 0);
+        });
+        Object.keys(data.baserunning || {}).forEach((k) => {
+          const pid = Number(k);
+          const obj = data.baserunning[k] || {};
+          Object.keys(initBaserun()).forEach((kk) => add(pid, "baserunning", kk, obj[kk] || 0));
+        });
+      } else {
+        const pid = Number(data.pitcherPid || 0);
+        if (pid) {
+          const obj = (data.pitching?.[pid]) || {};
+          Object.keys(initPitching()).forEach((kk) => add(pid, "pitching", kk, obj[kk] || 0));
+        }
+        Object.keys(data.fielding || {}).forEach((k) => {
+          const pidf = Number(k);
+          const obj = data.fielding[k] || {};
+          Object.keys(initFielding()).forEach((kk) => add(pidf, "fielding", kk, obj[kk] || 0));
+        });
+      }
+    });
+  });
+
+  return { stats, innings };
+};
+
+const setStartDefense = (gid: number, v: boolean) => {
+  setGames(prev => prev.map(g => {
+    if (g.id !== gid || g.locked) return g;
+    const next = { ...g, startDefense: v };
+    const agg = recomputeFromFrames(next);
+    return { ...next, stats: agg.stats, innings: agg.innings };
+  }));
+};
+
+type SectionKey = "batting" | "baserunning" | "pitching" | "fielding";
+const updateHalfStat = (
+  gid: number, inningIdx: number, half: "top"|"bottom",
+  section: SectionKey, pid: number, key: string, val: number
+) => {
+  const safe = Math.max(0, Number(val) || 0);
+  setGames(prev => prev.map(g => {
+    if (g.id !== gid || g.locked) return g;
+    const frames = (g.frames || Array(9).fill(0).map(()=>({ top:{ batting:{}, baserunning:{}, pitching:{}, fielding:{} }, bottom:{ batting:{}, baserunning:{}, pitching:{}, fielding:{} } }))).map(x => ({ top: { ...x.top, batting: { ...(x.top.batting||{}) }, baserunning: { ...(x.top.baserunning||{}) }, pitching: { ...(x.top.pitching||{}) }, fielding: { ...(x.top.fielding||{}) } }, bottom: { ...x.bottom, batting: { ...(x.bottom.batting||{}) }, baserunning: { ...(x.bottom.baserunning||{}) }, pitching: { ...(x.bottom.pitching||{}) }, fielding: { ...(x.bottom.fielding||{}) } } }));
+    const fh: any = frames[inningIdx][half];
+    fh[section] = { ...(fh[section] || {}) };
+    const obj = fh[section];
+    obj[pid] = { ...(obj[pid] || {}) };
+    obj[pid][key] = safe;
+    const next = { ...g, frames };
+    const agg = recomputeFromFrames(next);
+    return { ...next, stats: agg.stats, innings: agg.innings };
+  }));
+};
+
+const setHalfPitcher = (gid: number, inningIdx: number, half: "top"|"bottom", pid: number|undefined) => {
+  setGames(prev => prev.map(g => {
+    if (g.id !== gid || g.locked) return g;
+    const frames = g.frames ? g.frames.map(x => ({ top: { ...x.top }, bottom: { ...x.bottom } })) : g.frames;
+    frames[inningIdx][half].pitcherPid = pid;
+    const next = { ...g, frames };
+    const agg = recomputeFromFrames(next);
+    return { ...next, stats: agg.stats, innings: agg.innings };
+  }));
+};
 
   /* ---------------- 生涯同步 ---------------- */
   const syncCareer = () => {
@@ -1085,136 +1218,30 @@ return (
             </div>
           </div>
 
-          {/* 每位球員本場輸入 */}
-          <div className="space-y-3">
-            {g.lineup.map((pid) => {
-              const info = getNameAndPositions(players, g, pid);
-              const cur = g.stats[pid] ?? emptyTriple();
-              const readOnly = g.locked;
 
-              return (
-                <div key={pid} className="border rounded p-2">
-  <div className="font-semibold mb-1">{info.name}</div>
+{/* 逐局紀錄（Beta） */}
+<div className="space-y-2">
+  <div className="flex items-center gap-2">
+    <span className="text-sm">先攻/先守：</span>
+    <button
+      disabled={g.locked}
+      onClick={() => setStartDefense(g.id, true)}
+      className={`px-2 py-1 rounded ${g.startDefense ? "bg-black text-white" : "bg-white border"}`}
+    >
+      先守
+    </button>
+    <button
+      disabled={g.locked}
+      onClick={() => setStartDefense(g.id, false)}
+      className={`px-2 py-1 rounded ${!g.startDefense ? "bg-black text-white" : "bg-white border"}`}
+    >
+      先攻
+    </button>
+  </div>
 
-                  {/* 打擊 */}
-                  <table className="border text-sm mb-2 w-full">
-                    <thead>
-                      <tr>{Object.keys(initBatting()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        {Object.keys(initBatting()).map((stat) => (
-                          <td key={stat} className="border px-2 py-1 text-center">
-                            {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
-                              <NumCell value={toNonNegNum((cur.batting as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "batting", stat, n)} />
-                            )}
-                          </td>
-                        ))}
-                      </tr>
-                    </tbody>
-                  </table>
-
-                {/* 投手（僅 P 顯示） */}
-{info.positions.includes("P") && (
-  <table className="border text-sm mb-2 w-full">
-    <thead>
-      <tr>
-        {Object.keys(initPitching()).map((k) => (
-          <th key={k} className="border px-2 py-1">{k}</th>
-        ))}
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        {Object.keys(initPitching()).map((stat) => {
-  const isIP = stat === "IP";
-  const key = `${g.id}:${pid}`;                 // 每場比賽 × 球員 的唯一 key
-  const rawValue = (cur.pitching as any)[stat]; // 現存的數值
-
-  return (
-    <td key={stat} className="border px-2 py-1 text-center">
-     {readOnly ? (
- isIP ? formatIpDisplay(ipToInnings(rawValue)) : toNonNegNum(rawValue)
-) : isIP ? (
-
-<input
-  type="number"
-  min={0}
-  step={0.1}
-  className={IN_NUM_GRID}
-  value={ipDraft[key] ?? String(rawValue ?? "")}
-  onChange={(e) => {
-    const prev = Number(ipDraft[key] ?? rawValue ?? 0) || 0;
-    const raw  = parseFloat(e.target.value || "0");
-    const next = stepIpValue(prev, raw);
-
-    // 先把顯示值變成合法的 0 / 0.1 / 0.2 / 整數
-    setIpDraft((d) => ({ ...d, [key]: String(next) }));
-
-    // 如果是按上下箭頭（±0.1），立即寫回資料
-    const diffTenth = Math.round((raw - prev) * 10);
-    if (diffTenth === 1 || diffTenth === -1) {
-      updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(next));
-    }
-  }}
-  onBlur={() => {
-    const v = ipDraft[key];
-    const next = stepIpValue(Number(rawValue || 0), Number(v || "0"));
-    updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(next));
-    setIpDraft((d) => { const { [key]: _, ...rest } = d; return rest; });
-  }}
-/>
-
-      ) : (
-                <NumCell value={toNonNegNum(rawValue)} onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)} />
-              )}
-            </td>
-          );
-        })}
-      </tr>
-    </tbody>
-  </table>
-)}
-                 {/* 跑壘 */}
-                  <table className="border text-sm mb-2 w-full">
-                    <thead>
-                      <tr>{Object.keys(initBaserun()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        {Object.keys(initBaserun()).map((stat) => (
-                          <td key={stat} className="border px-2 py-1 text-center">
-                            {readOnly ? toNonNegNum((cur.baserunning as any)[stat]) : (
-                              <NumCell value={toNonNegNum((cur.baserunning as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "baserunning", stat, n)} />
-                            )}
-                          </td>
-                        ))}
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  {/* 守備 */}
-                  <table className="border text-sm w-full">
-                    <thead>
-                      <tr>{Object.keys(initFielding()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        {Object.keys(initFielding()).map((stat) => (
-                          <td key={stat} className="border px-2 py-1 text-center">
-                            {readOnly ? toNonNegNum((cur.fielding as any)[stat]) : (
-                              <NumCell value={toNonNegNum((cur.fielding as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "fielding", stat, n)} />
-                            )}
-                          </td>
-                        ))}
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })}
-          </div>
-
+  {/* 局數切換 */}
+  <InningEditor g={g} />
+</div>
           {/* 逐局比分 */}
           <div className="overflow-x-auto md:overflow-x-visible">
   <table className="border text-sm w-full">
@@ -1293,309 +1320,281 @@ return (
   </div>
 );
 
-  /* ---------------- UI：Compare ---------------- */
-  const Compare = () => {
-  // 可用指標（分群）
-  const ALL = {
-    hitter: ["AB","H","AVG","OBP","SLG","OPS","R","RBI","TB","TOB","RC","BBK","SB","SBP"],
-    pitcher: ["ERA","WHIP","K9","BB9","H9","KBB","FIP","OBA","PC"],
-    field: ["FPCT"],
-  } as const;
-
-  // 本地備用：避免初始化函式名稱不一致造成編譯失敗
-  const initBaserunLocal = () => ({ SB: 0, CS: 0 });
-
-  // 以 games 聚合出指定球員的四大區總計（容錯多種欄位命名）
-  const sumNum = (a: any, b: any, k: string) => { a[k] = (Number(a[k]) || 0) + (Number(b[k]) || 0); };
-  const addAllNumbers = (dst: any, src: any) => { for (const k in src) if (typeof src[k] === "number") sumNum(dst, src, k); };
-
-  const normalizeLine = (line: any) => {
-    // K/SO 同義，統一到 SO
-    if (line && typeof line === "object") {
-      if (typeof line.K === "number" && typeof line.SO !== "number") line.SO = line.K;
-      if (typeof line.BF === "number" && typeof line.PA !== "number") line.PA = line.BF; // 假如有面對打者
-    }
-    return line;
-  };
-
-  const linesOf = (g: any, keys: string[]) => {
-    for (const k of keys) if (Array.isArray(g?.[k])) return g[k] as any[];
-    return [];
-  };
-
-  const pickId = (line: any) => (line?.playerId ?? line?.pid ?? line?.id);
-  const isPlayerLine = (line: any, id: number) => {
-    const pid = pickId(line);
-    return pid === id || String(pid) === String(id);
-  };
-
-  const aggregateFromGames = (playerId: number) => {
-  const b = initBatting();       // 打擊
-  const p = initPitching();      // 投手
-  const f = initFielding();      // 守備
-  const r = initBaserun();       // 跑壘
-
-  for (const g of games) {
-    const cur = g?.stats?.[playerId];
-    if (!cur) continue;
-
-    (Object.keys(b) as (keyof Batting)[]).forEach((k) => (b[k] += toNonNegNum((cur.batting as any)[k])));
-    (Object.keys(p) as (keyof Pitching)[]).forEach((k) => (p[k] += toNonNegNum((cur.pitching as any)[k])));
-    (Object.keys(f) as (keyof Fielding)[]).forEach((k) => (f[k] += toNonNegNum((cur.fielding as any)[k])));
-    (Object.keys(r) as (keyof Baserun)[]).forEach((k) => (r[k] += toNonNegNum((cur.baserunning as any)[k])));
-  }
-  return { batting: b, pitching: p, fielding: f, baserunning: r };
-};
 
 
-
-  // 哪些指標是「高者為佳」（未列出的預設 true）
-  const higherIsBetter: Record<string, boolean> = {
-    ERA: false, WHIP: false, BB9: false, H9: false, OBA: false, PC: false,
-    CS: false, // 若將來加入 CS，低才好
-  };
-
-  // 顯示小數位數
-  const dp3 = new Set(["AVG","OBP","SLG","OPS","FPCT","OBA"]);
-  const dp2 = new Set(["ERA","WHIP","K9","BB9","H9","KBB","FIP"]);
-  const percent = new Set(["SBP"]);
-
-  // 選擇要比較的指標（從 localStorage 還原）
-  const pick = (key: string, fallback: string[]) => {
-    if (typeof window === "undefined") return fallback;
-    try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; }
-  };
-  const [selH, setSelH] = useState<string[]>(() => pick(STORAGE.compareSelH, ["AVG","OBP","SLG","OPS"]));
-  const [selP, setSelP] = useState<string[]>(() => pick(STORAGE.compareSelP, ["ERA","WHIP","K9"]));
-  const [selF, setSelF] = useState<string[]>(() => pick(STORAGE.compareSelF, ["FPCT"]));
-
-  // 持久化
-  useDebouncedLocalStorage(STORAGE.compareSelH, selH, 200);
-  useDebouncedLocalStorage(STORAGE.compareSelP, selP, 200);
-  useDebouncedLocalStorage(STORAGE.compareSelF, selF, 200);
-
-  const compareLive = compare.filter((id) => players.some((p) => p.id === id));
-  const colors = ["#8884d8","#82ca9d","#ffc658","#ff8a65","#90caf9","#a78bfa","#34d399"];
-
-  // 構建一行資料：{ stat, playerA: val, playerB: val, ... }
-  const makeRow = (stat: string) => {
-    const row: Record<string, number | string> = { stat };
-    compareLive.forEach((id) => {
-      const p = players.find((x) => x.id === id); if (!p) return;
-      const tot = aggregateFromGames(p.id);
-      const s = calcStats(tot.batting, tot.pitching, tot.fielding, tot.baserunning);
-      const v = parseFloat((s as any)[stat]) || 0;
-      row[p.name] = Number.isFinite(v) ? v : 0;
-    });
-    return row;
-  };
-
-  const metricsTable = [...selH, ...selP, ...selF];
-  const tableBody = metricsTable.map(makeRow);
-
-  // 格式化顯示
-  const fmt = (stat: string, vRaw: any) => {
-    const v = Number(vRaw) || 0;
-    if (percent.has(stat)) return v.toFixed(1) + "%";
-    if (dp3.has(stat)) return v.toFixed(3);
-    if (dp2.has(stat)) return v.toFixed(2);
-    return String(Math.round(v));
-  };
-
-  // 雷達圖資料拆成「打者」「投手」
-  const hitterRadar = selH.map(makeRow);
-  const pitcherRadar = selP.map(makeRow);
-
-  const getMax = (rows: any[]) => {
-    let max = 0;
-    rows.forEach((row) => {
-      compareLive.forEach((id) => {
-        const name = players.find((p) => p.id === id)?.name;
-        const v = name ? Number((row as any)[name]) || 0 : 0;
-        if (v > max) max = v;
-      });
-    });
-    return max || 1;
-  };
-  const niceMax = (x: number) => {
-    if (x <= 1) return 1;
-    if (x <= 1.2) return 1.2;
-    if (x <= 2) return 2;
-    if (x <= 5) return 5;
-    if (x <= 10) return 10;
-    if (x <= 15) return 15;
-    return Math.ceil(x);
-  };
-  const hitterMax = niceMax(getMax(hitterRadar));
-  const pitcherMax = niceMax(getMax(pitcherRadar));
-
-  // UI：勾選器
-  const MetricPicker = ({ title, all, sel, setSel }:{ title:string; all:string[]; sel:string[]; setSel: (v:string[])=>void }) => {
-    const toggle = (m:string) => setSel(sel.includes(m) ? sel.filter(x=>x!==m) : [...sel, m]);
-    const allOn = () => setSel(all);
-    const none = () => setSel([]);
-    return (
-      <div className="bg-white border rounded p-2">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="font-semibold text-sm">{title}</div>
-          <button onClick={allOn} className="text-xs bg-gray-100 px-2 py-0.5 rounded">全選</button>
-          <button onClick={none} className="text-xs bg-gray-100 px-2 py-0.5 rounded">清空</button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {all.map((m) => (
-            <label key={m} className={`px-2 py-1 rounded border text-xs cursor-pointer ${sel.includes(m) ? "bg-black text-white" : "bg-white"}`}>
-              <input type="checkbox" className="mr-1" checked={sel.includes(m)} onChange={()=>toggle(m)} />
-              {m}
-            </label>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  // 判定每列誰比較好（支援同值並列高亮）
-  const bestMap: Record<string, Set<string>> = {};
-  tableBody.forEach((row) => {
-    const stat = String(row.stat);
-    const vals: {name:string; v:number}[] = [];
-    compareLive.forEach((id) => {
-      const name = players.find((p) => p.id === id)?.name;
-      if (!name) return;
-      const v = Number((row as any)[name]) || 0;
-      vals.push({ name, v });
-    });
-    if (vals.length === 0) return;
-    const hi = higherIsBetter[stat] !== false;
-    const target = hi ? Math.max(...vals.map(x=>x.v)) : Math.min(...vals.map(x=>x.v));
-    const winners = new Set(vals.filter(x => Math.abs(x.v - target) < 1e-9).map(x => x.name));
-    bestMap[stat] = winners;
-  });
-
-  const [compareView, setCompareView] = useState<"table" | "trend">("table");
-
+/* 逐局編輯元件：避免在 map 裡塞本地變數，抽成 component */
+const InningEditor = ({ g }: { g: Game }) => {
+  const [cur, setCur] = useState(0);
+  useEffect(()=>{ if (cur<0 || cur>8) setCur(0); }, [g.id]);
   return (
-    <div className="space-y-4">
-      {/* 選擇球員 */}
-      <div className="flex flex-wrap gap-2">
-        {players.map((p) => (
-          <label key={p.id} className="border px-2 py-1 rounded text-sm">
-            <input type="checkbox" className="mr-1"
-              checked={compare.includes(p.id)}
-              onChange={(e) => setCompare((prev) => (e.target.checked ? [...prev, p.id] : prev.filter((x) => x !== p.id)))} />
-            {p.name}
-          </label>
+    <div className="border rounded p-2 bg-white">
+      <div className="flex flex-wrap gap-1 mb-2">
+        {Array.from({length:9}, (_,i)=>i).map(i => (
+          <button key={i}
+            onClick={() => setCur(i)}
+            className={`px-2 py-1 rounded text-xs ${cur===i ? "bg-black text-white" : "bg-gray-100"}`}>
+            {i+1} 局
+          </button>
         ))}
       </div>
 
-      {/* 指標挑選器 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <MetricPicker title="打者指標" all={[...ALL.hitter]} sel={selH} setSel={setSelH} />
-        <MetricPicker title="投手指標" all={[...ALL.pitcher]} sel={selP} setSel={setSelP} />
-        <MetricPicker title="守備/其他" all={[...ALL.field]} sel={selF} setSel={setSelF} />
-      </div>
+      {(["top","bottom"] as const).map((half) => {
+        const offense = isOffenseHalf(g, half);
+        const data: any = g.frames?.[cur]?.[half] || { batting:{}, baserunning:{}, pitching:{}, fielding:{} };
+        return (
+          <div key={half} className="mb-3">
+            <div className="font-semibold mb-1">{half === "top" ? "上半" : "下半"}（{offense ? "攻擊" : "守備"}）</div>
 
-      {/* 視圖切換 */}
-      <div className="flex items-center">
-        <div className="ml-auto flex items-center gap-1 bg-slate-100 rounded-full p-1">
-          <button
-            onClick={() => setCompareView("table")}
-            className={`px-3 py-1 rounded-full text-xs md:text-sm ${compareView === "table" ? "bg-white shadow" : "opacity-70 hover:opacity-100"}`}
-          >表格</button>
-          <button
-            onClick={() => setCompareView("trend")}
-            className={`px-3 py-1 rounded-full text-xs md:text-sm ${compareView === "trend" ? "bg-white shadow" : "opacity-70 hover:opacity-100"}`}
-          >趨勢圖</button>
-        </div>
-      </div>
-
-      {compareLive.length >= 2 ? (
-        compareView === "table" ? (
-          <>
-            {/* 對比表格（較好者高亮） */}
-            <div className="overflow-x-auto">
-              <table className="border text-sm w-full bg-white">
-                <thead>
-                  <tr>
-                    <th className="border px-2 py-1">指標</th>
-                    {compareLive.map((id) => (
-                      <th key={id} className="border px-2 py-1">
-                        {players.find((p) => p.id === id)?.name ?? `#${id}`}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {tableBody.map((row) => {
-                    const stat = String(row.stat);
-                    return (
-                      <tr key={stat}>
-                        <td className="border px-2 py-1">{stat}</td>
-                        {compareLive.map((id) => {
-                          const name = players.find((p) => p.id === id)?.name;
-                          const val = name ? (row as any)[name] : null;
-                          const isBest = !!(name && bestMap[stat]?.has(name));
-                          return (
-                            <td key={id} className={`border px-2 py-1 text-right ${isBest ? "bg-yellow-100 font-semibold" : ""}`}>
-                              {name ? fmt(stat, val) : "-"}
+            {offense ? (
+              <>
+                {/* 攻擊：打擊 + 跑壘 */}
+                <div className="overflow-x-auto">
+                  <table className="border text-xs w-full mb-2">
+                    <thead>
+                      <tr>{Object.keys(initBatting()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {g.lineup.map((pid) => (
+                        <tr key={pid}>
+                          {Object.keys(initBatting()).map((stat) => (
+                            <td key={stat} className="border px-2 py-1 text-center">
+                              {g.locked ? toNonNegNum(((data.batting || {})[pid]||{})[stat]) : (
+                                <NumCell
+                                  value={toNonNegNum(((data.batting || {})[pid]||{})[stat])}
+                                  onCommit={(n) => updateHalfStat(g.id, cur, half, "batting", pid, stat, n)}
+                                />
+                              )}
                             </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-            {/* 拆成兩張雷達圖 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="w-full h-80">
-                <ResponsiveContainer>
-                  <RadarChart data={hitterRadar}>
-                    <PolarGrid /><PolarAngleAxis dataKey="stat" />
-                    <PolarRadiusAxis domain={[0, hitterMax]} />
-                    {compareLive.map((id, i) => {
-                      const name = players.find((p) => p.id === id)?.name;
-                      return name ? (
-                        <Radar key={id} name={name} dataKey={name}
-                          stroke={colors[i % colors.length]}
-                          fill={colors[i % colors.length]}
-                          fillOpacity={0.3} />
-                      ) : null;
-                    })}
-                    <Legend />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="w-full h-80">
-                <ResponsiveContainer>
-                  <RadarChart data={pitcherRadar}>
-                    <PolarGrid /><PolarAngleAxis dataKey="stat" />
-                    <PolarRadiusAxis domain={[0, pitcherMax]} />
-                    {compareLive.map((id, i) => {
-                      const name = players.find((p) => p.id === id)?.name;
-                      return name ? (
-                        <Radar key={id} name={name} dataKey={name}
-                          stroke={colors[i % colors.length]}
-                          fill={colors[i % colors.length]}
-                          fillOpacity={0.3} />
-                      ) : null;
-                    })}
-                    <Legend />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </>
-        ) : (
-          <TrendTab games={games} />
-        )
-      ) : (
-        <div className="text-sm text-gray-500">請至少勾選兩位球員進行對比。</div>
-      )}
+                <div className="overflow-x-auto">
+                  <table className="border text-xs w-full">
+                    <thead>
+                      <tr>{Object.keys(initBaserun()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {g.lineup.map((pid) => (
+                        <tr key={pid}>
+                          {Object.keys(initBaserun()).map((stat) => (
+                            <td key={stat} className="border px-2 py-1 text-center">
+                              {g.locked ? toNonNegNum(((data.baserunning || {})[pid]||{})[stat]) : (
+                                <NumCell
+                                  value={toNonNegNum(((data.baserunning || {})[pid]||{})[stat])}
+                                  onCommit={(n) => updateHalfStat(g.id, cur, half, "baserunning", pid, stat, n)}
+                                />
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* 守備：投手（單選） + 守備 */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm">當局投手：</span>
+                  <select
+                    disabled={g.locked}
+                    value={data.pitcherPid ?? ""}
+                    onChange={(e) => setHalfPitcher(g.id, cur, half, e.target.value ? Number(e.target.value) : undefined)}
+                    className="border px-2 py-1 rounded"
+                  >
+                    <option value="">未指定</option>
+                    {g.lineup.filter(pid => (getNameAndPositions(players, g, pid).positions || []).includes("P")).map(pid => (
+                      <option key={pid} value={pid}>{getNameAndPositions(players, g, pid).name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {data.pitcherPid && (
+                  <div className="overflow-x-auto mb-2">
+                    <table className="border text-xs w-full">
+                      <thead>
+                        <tr>{Object.keys(initPitching()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          {Object.keys(initPitching()).map((stat) => (
+                            <td key={stat} className="border px-2 py-1 text-center">
+                              {g.locked ? toNonNegNum(((data.pitching || {})[data.pitcherPid]||{})[stat]) : (
+                                <NumCell
+                                  value={toNonNegNum(((data.pitching || {})[data.pitcherPid]||{})[stat])}
+                                  onCommit={(n) => updateHalfStat(g.id, cur, half, "pitching", Number(data.pitcherPid), stat, n)}
+                                />
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto">
+                  <table className="border text-xs w-full">
+                    <thead>
+                      <tr>{Object.keys(initFielding()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {g.lineup.map((pid) => (
+                        <tr key={pid}>
+                          {Object.keys(initFielding()).map((stat) => (
+                            <td key={stat} className="border px-2 py-1 text-center">
+                              {g.locked ? toNonNegNum(((data.fielding || {})[pid]||{})[stat]) : (
+                                <NumCell
+                                  value={toNonNegNum(((data.fielding || {})[pid]||{})[stat])}
+                                  onCommit={(n) => updateHalfStat(g.id, cur, half, "fielding", pid, stat, n)}
+                                />
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
+
+  /* ---------------- UI：Compare ---------------- */
+  const Compare = () => {
+    const compareLive = compare.filter((id) => players.some((p) => p.id === id));
+    const METRICS = ["AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"];
+    const CHART_METRICS = ["AVG","OBP","SLG","OPS","ERA","WHIP","K9","FPCT"];
+    const colors = ["#8884d8","#82ca9d","#ffc658","#ff8a65","#90caf9"];
+    const [compareView, setCompareView] = useState<"table" | "trend">("table");
+
+const makeRow = (stat: string) => {
+      const row: Record<string, number | string> = { stat };
+      compareLive.forEach((id) => {
+        const p = players.find((x) => x.id === id); if (!p) return;
+        const s = calcStats(p.batting ?? initBatting(), p.pitching ?? initPitching(), p.fielding ?? initFielding(), p.baserunning ?? initBaserun());
+        const v = parseFloat((s as any)[stat]) || 0; row[p.name] = Number.isFinite(v) ? v : 0;
+      });
+      return row;
+    };
+
+    const tableBody = METRICS.map(makeRow);
+    const chartData = CHART_METRICS.map(makeRow);
+
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {players.map((p) => (
+            <label key={p.id} className="border px-2 py-1 rounded text-sm">
+              <input type="checkbox" className="mr-1"
+                checked={compare.includes(p.id)}
+                onChange={(e) => setCompare((prev) => (e.target.checked ? [...prev, p.id] : prev.filter((x) => x !== p.id)))} />
+              {p.name}
+            </label>
+          ))}
+        </div>
+{/* 表格 / 趨勢圖 切換鈕（放在選人區後、靠右） */}
+<div className="flex items-center">
+  <div className="ml-auto flex items-center gap-1 bg-slate-100 rounded-full p-1">
+    <button
+      onClick={() => setCompareView("table")}
+      className={`px-3 py-1 rounded-full text-xs md:text-sm ${
+        compareView === "table" ? "bg-white shadow" : "opacity-70 hover:opacity-100"
+      }`}
+    >
+      表格
+    </button>
+    <button
+      onClick={() => setCompareView("trend")}
+      className={`px-3 py-1 rounded-full text-xs md:text-sm ${
+        compareView === "trend" ? "bg-white shadow" : "opacity-70 hover:opacity-100"
+      }`}
+    >
+      趨勢圖
+    </button>
+  </div>
+</div>
+
+       {compareLive.length >= 2 ? (
+  compareView === "table" ? (
+    <>
+      {/* 原本的表格 */}
+      <div className="overflow-x-auto">
+        <table className="border text-sm w-full bg-white">
+          <thead>
+            <tr>
+              <th className="border px-2 py-1">指標</th>
+              {compareLive.map((id) => (
+                <th key={id} className="border px-2 py-1">
+                  {players.find((p) => p.id === id)?.name ?? `#${id}`}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tableBody.map((row) => (
+              <tr key={row.stat as string}>
+                <td className="border px-2 py-1">{row.stat as string}</td>
+                {compareLive.map((id) => {
+                  const name = players.find((p) => p.id === id)?.name;
+                  return (
+                    <td key={id} className="border px-2 py-1 text-right">
+                      {name ? (row as any)[name] : "-"}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 原本的長條＋雷達（保留不動） */}
+      <ResponsiveContainer width="100%" height={320}>
+        <BarChart data={chartData}>
+          <XAxis dataKey="stat" /><YAxis /><Tooltip /><Legend />
+          {compareLive.map((id, i) => {
+            const name = players.find((p) => p.id === id)?.name;
+            return name ? <Bar key={id} dataKey={name} fill={colors[i % colors.length]} /> : null;
+          })}
+        </BarChart>
+      </ResponsiveContainer>
+
+      <ResponsiveContainer width="100%" height={360}>
+        <RadarChart data={chartData}>
+          <PolarGrid /><PolarAngleAxis dataKey="stat" /><PolarRadiusAxis />
+          {compareLive.map((id, i) => {
+            const name = players.find((p) => p.id === id)?.name;
+            return name ? (
+              <Radar key={id} name={name} dataKey={name}
+                stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.3} />
+            ) : null;
+          })}
+          <Legend />
+        </RadarChart>
+      </ResponsiveContainer>
+    </>
+  ) : (
+    // 這裡改成直接顯示趨勢圖（沿用你現有的 TrendTab）
+    <TrendTab games={games} />
+  )
+) : (
+  <div className="text-sm text-gray-500">請至少勾選兩位球員進行對比。</div>
+)}
+
+      </div>
+    );
+  };
 // --- 趨勢圖分頁（放在 Compare 後、ExportPanel 前） ---
 type TrendTabProps = { games: Game[] };
 
