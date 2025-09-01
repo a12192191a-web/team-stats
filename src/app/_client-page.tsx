@@ -1231,7 +1231,7 @@ return (
     <button disabled={g.locked} onClick={() => setStartDefense(g.id, true)} className={`px-2 py-1 rounded ${g.startDefense ? "bg-black text-white" : "bg-white border"}`}>先守</button>
     <button disabled={g.locked} onClick={() => setStartDefense(g.id, false)} className={`px-2 py-1 rounded ${!g.startDefense ? "bg-black text-white" : "bg-white border"}`}>先攻</button>
   </div>
-  <InningEditor g={g} />
+  <HalfStepper g={g} />
 </div>
           {/* 逐局比分 */}
           <div className="overflow-x-auto md:overflow-x-visible">
@@ -1458,6 +1458,28 @@ const HalfStepper = ({ g }: { g: Game }) => {
 };
 
 
+
+
+/* 簡易趨勢圖（用於 Compare 的 trend 視圖；根據每場加總輸出折線） */
+const TrendTab = ({ games }: { games: Game[] }) => {
+  // 取每場全隊的 R（或其他指標都可再擴充）畫一條線；讓 import 的 LineChart/Line 不再 unused
+  const data = games.map((g, i) => ({
+    name: String(i + 1),
+    R: Number((g.innings || []).reduce((a,b)=>a+(Number(b)||0), 0)) || 0,
+  }));
+  return (
+    <div className="w-full h-72 bg-white border rounded p-2">
+      <ResponsiveContainer>
+        <LineChart data={data}>
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip />
+          <Line type="monotone" dataKey="R" />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
 /* ---------------- UI：Compare ---------------- */
   const Compare = () => {
     // 可用指標
