@@ -28,7 +28,7 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-type VoidFn = () => void | Promise<void>;
+type VoidFn = () => voidoid | Promise<void>;
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
 function useFloatingCheckUpdateButton(onClick?: VoidFn) {
@@ -98,6 +98,17 @@ type Pitching = ReturnType<typeof initPitching>;
 type Fielding = ReturnType<typeof initFielding>;
 type Baserun  = ReturnType<typeof initBaserun>;
 
+// 逐局資料型別
+type HalfFrame = {
+  pitcherPid?: number;
+  batting: Record<number, Partial<Batting>>;
+  baserunning: Record<number, Partial<Baserun>>;
+  pitching: Record<number, Partial<Pitching>>;
+  fielding: Record<number, Partial<Fielding>>;
+};
+type Frames = Array<{ top: HalfFrame; bottom: HalfFrame }>;
+
+
 type Player = {
   id: number;
   name: string;
@@ -128,32 +139,8 @@ type Game = {
   lossPid?: number;  // ← 新增
   savePid?: number;  // ← 新增
 
-  startDefense?: boolean; // true=先守（主隊）；false=先攻（客隊）
-  frames?: Array<{
-    top: {
-      pitcherPid?: number;
-      batting: Record<number, Partial<Batting>>;
-      baserunning: Record<number, Partial<Baserun>>;
-      pitching: Record<number, Partial<Pitching>>;
-      fielding: Record<number, Partial<Fielding>>;
-    };
-type HalfFrame = {
-  pitcherPid?: number;
-  batting: Record<number, Partial<Batting>>;
-  baserunning: Record<number, Partial<Baserun>>;
-  pitching: Record<number, Partial<Pitching>>;
-  fielding: Record<number, Partial<Fielding>>;
-};
-type Frames = Array<{ top: HalfFrame; bottom: HalfFrame }>;
-
-    bottom: {
-      pitcherPid?: number;
-      batting: Record<number, Partial<Batting>>;
-      baserunning: Record<number, Partial<Baserun>>;
-      pitching: Record<number, Partial<Pitching>>;
-      fielding: Record<number, Partial<Fielding>>;
-    };
-  }>;
+  startDefense?: boolean; // true=先守; false=先攻
+  frames?: Frames;        // 逐局資料（9 局，上/下半）
 };
 
 
@@ -216,9 +203,10 @@ function reviveGames(raw: any): Game[] {
         };
       });
     }
-// 預設 9 局、上下半局資料結構
-const emptyHalf = () => ({ pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} });
-const frames = Array.isArray(g?.frames) && g.frames.length
+   
+// 逐局資料預設
+const emptyHalf = (): HalfFrame => ({ pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} });
+const frames: Frames = Array.isArray(g?.frames) && g.frames.length
   ? g.frames.map((fr: any) => ({
       top: {
         pitcherPid: fr?.top?.pitcherPid,
@@ -233,12 +221,11 @@ const frames = Array.isArray(g?.frames) && g.frames.length
         baserunning: fr?.bottom?.baserunning || {},
         pitching: fr?.bottom?.pitching || {},
         fielding: fr?.bottom?.fielding || {},
-      }
+      },
     }))
   : Array(9).fill(0).map(() => ({ top: emptyHalf(), bottom: emptyHalf() }));
 const startDefense = !!g?.startDefense;
-
-   return {
+return {
   id: Number(g?.id),
   date: String(g?.date ?? ""),
   opponent: String(g?.opponent ?? "Unknown"),
@@ -758,47 +745,56 @@ const addGame = () => {
     }));
   };
 
+  
 
-/* ---------------- 逐局：工具 ---------------- */
+/* ---------------- 逐局：工具與彙整 ---------------- */
 const isOffenseHalf = (g: Game, half: "top" | "bottom") => {
   return half === "top" ? !g.startDefense : !!g.startDefense;
+};
+
+const ensureFrames = (src?: Frames): Frames => {
+  const mkHalf = (): HalfFrame => ({ pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} });
+  if (Array.isArray(src) && src.length) {
+    return src.map(fr => ({
+      top: { pitcherPid: fr.top?.pitcherPid, batting: { ...fr.top?.batting }, baserunning: { ...fr.top?.baserunning }, pitching: { ...fr.top?.pitching }, fielding: { ...fr.top?.fielding } },
+      bottom: { pitcherPid: fr.bottom?.pitcherPid, batting: { ...fr.bottom?.batting }, baserunning: { ...fr.bottom?.baserunning }, pitching: { ...fr.bottom?.pitching }, fielding: { ...fr.bottom?.fielding } },
+    }));
+  }
+  return Array(9).fill(0).map(() => ({ top: mkHalf(), bottom: mkHalf() }));
 };
 
 const recomputeFromFrames = (g: Game) => {
   const stats: Record<number, Triple> = {};
   const innings: number[] = Array(9).fill(0);
-
   const emptyT = (): Triple => ({ batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() });
-
   const add = (pid: number, section: keyof Triple, key: string, val: number) => {
     const t = stats[pid] ?? emptyT();
     (t[section] as any)[key] = ((t[section] as any)[key] || 0) + (Number(val)||0);
     stats[pid] = t;
   };
-
   g.frames?.forEach((fr, i) => {
     (["top","bottom"] as const).forEach((half) => {
       const data: any = (fr as any)[half];
       const offense = isOffenseHalf(g, half);
       if (offense) {
-        Object.keys(data.batting || {}).forEach((k) => {
+        Object.keys(data?.batting || {}).forEach((k) => {
           const pid = Number(k);
           const obj = data.batting[k] || {};
           Object.keys(initBatting()).forEach((kk) => add(pid, "batting", kk, obj[kk] || 0));
           innings[i] += Number(obj.R || 0);
         });
-        Object.keys(data.baserunning || {}).forEach((k) => {
+        Object.keys(data?.baserunning || {}).forEach((k) => {
           const pid = Number(k);
           const obj = data.baserunning[k] || {};
           Object.keys(initBaserun()).forEach((kk) => add(pid, "baserunning", kk, obj[kk] || 0));
         });
       } else {
-        const pid = Number(data.pitcherPid || 0);
+        const pid = Number(data?.pitcherPid || 0);
         if (pid) {
-          const obj = (data.pitching?.[pid]) || {};
+          const obj = (data?.pitching?.[pid]) || {};
           Object.keys(initPitching()).forEach((kk) => add(pid, "pitching", kk, obj[kk] || 0));
         }
-        Object.keys(data.fielding || {}).forEach((k) => {
+        Object.keys(data?.fielding || {}).forEach((k) => {
           const pidf = Number(k);
           const obj = data.fielding[k] || {};
           Object.keys(initFielding()).forEach((kk) => add(pidf, "fielding", kk, obj[kk] || 0));
@@ -806,7 +802,6 @@ const recomputeFromFrames = (g: Game) => {
       }
     });
   });
-
   return { stats, innings };
 };
 
@@ -820,38 +815,35 @@ const setStartDefense = (gid: number, v: boolean) => {
 };
 
 type SectionKey = "batting" | "baserunning" | "pitching" | "fielding";
-const updateHalfStat = (
-    gid: number, inningIdx: number, half: "top"|"bottom",
-    section: SectionKey, pid: number, key: string, val: number
-  ) => {
-    const safe = Math.max(0, Number(val) || 0);
-    setGames(prev => prev.map(g => {
-      if (g.id !== gid || g.locked) return g;
-      const frames = ensureFrames(g.frames);
-      if (!frames[inningIdx]) frames[inningIdx] = { top: emptyHalf(), bottom: emptyHalf() };
-      const fh: any = frames[inningIdx][half];
-      fh[section] = { ...(fh[section] || {}) };
-      const obj = fh[section];
-      obj[pid] = { ...(obj[pid] || {}) };
-      obj[pid][key] = safe;
-      const next = { ...g, frames };
-      const agg = recomputeFromFrames(next);
-      return { ...next, stats: agg.stats, innings: agg.innings };
-    }));
-  };
-
-const setHalfPitcher = (gid: number, inningIdx: number, half: "top"|"bottom", pid: number|undefined) => {
+const updateHalfStat = (gid: number, inningIdx: number, half: "top"|"bottom", section: SectionKey, pid: number, key: string, val: number) => {
+  const safe = Math.max(0, Number(val) || 0);
   setGames(prev => prev.map(g => {
     if (g.id !== gid || g.locked) return g;
-    const frames = g.frames ? g.frames.map(x => ({ top: { ...x.top }, bottom: { ...x.bottom } })) : g.frames;
-    frames[inningIdx][half].pitcherPid = pid;
+    const frames = ensureFrames(g.frames);
+    if (!frames[inningIdx]) frames[inningIdx] = { top: { pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} }, bottom: { pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} } };
+    const fh: any = frames[inningIdx][half];
+    fh[section] = { ...(fh[section] || {}) };
+    const obj = fh[section];
+    obj[pid] = { ...(obj[pid] || {}) };
+    obj[pid][key] = safe;
     const next = { ...g, frames };
     const agg = recomputeFromFrames(next);
     return { ...next, stats: agg.stats, innings: agg.innings };
   }));
 };
 
-  /* ---------------- 生涯同步 ---------------- */
+const setHalfPitcher = (gid: number, inningIdx: number, half: "top"|"bottom", pid: number|undefined) => {
+  setGames(prev => prev.map(g => {
+    if (g.id !== gid || g.locked) return g;
+    const frames = ensureFrames(g.frames);
+    if (!frames[inningIdx]) frames[inningIdx] = { top: { pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} }, bottom: { pitcherPid: undefined, batting: {}, baserunning: {}, pitching: {}, fielding: {} } };
+    (frames as Frames)[inningIdx][half].pitcherPid = pid;
+    const next = { ...g, frames };
+    const agg = recomputeFromFrames(next);
+    return { ...next, stats: agg.stats, innings: agg.innings };
+  }));
+};
+/* ---------------- 生涯同步 ---------------- */
   const syncCareer = () => {
     setPlayers((prev) => prev.map((p) => {
       const b = initBatting(), pi = initPitching(), f = initFielding(), br = initBaserun();
@@ -1229,27 +1221,13 @@ return (
           </div>
 
 
-{/* 逐局紀錄（Beta） */}
+{/* 逐局紀錄（上/下半，符合 MLB 邏輯） */}
 <div className="space-y-2">
   <div className="flex items-center gap-2">
     <span className="text-sm">先攻/先守：</span>
-    <button
-      disabled={g.locked}
-      onClick={() => setStartDefense(g.id, true)}
-      className={`px-2 py-1 rounded ${g.startDefense ? "bg-black text-white" : "bg-white border"}`}
-    >
-      先守
-    </button>
-    <button
-      disabled={g.locked}
-      onClick={() => setStartDefense(g.id, false)}
-      className={`px-2 py-1 rounded ${!g.startDefense ? "bg-black text-white" : "bg-white border"}`}
-    >
-      先攻
-    </button>
+    <button disabled={g.locked} onClick={() => setStartDefense(g.id, true)} className={`px-2 py-1 rounded ${g.startDefense ? "bg-black text-white" : "bg-white border"}`}>先守</button>
+    <button disabled={g.locked} onClick={() => setStartDefense(g.id, false)} className={`px-2 py-1 rounded ${!g.startDefense ? "bg-black text-white" : "bg-white border"}`}>先攻</button>
   </div>
-
-  {/* 局數切換 */}
   <InningEditor g={g} />
 </div>
           {/* 逐局比分 */}
@@ -1330,21 +1308,16 @@ return (
   </div>
 );
 
+  
 
-
-/* 逐局編輯元件：避免在 map 裡塞本地變數，抽成 component */
+/* 逐局編輯元件 */
 const InningEditor = ({ g }: { g: Game }) => {
   const [cur, setCur] = useState(0);
-  useEffect(()=>{ if (cur<0 || cur>8) setCur(0); }, [g.id]);
   return (
     <div className="border rounded p-2 bg-white">
       <div className="flex flex-wrap gap-1 mb-2">
         {Array.from({length:9}, (_,i)=>i).map(i => (
-          <button key={i}
-            onClick={() => setCur(i)}
-            className={`px-2 py-1 rounded text-xs ${cur===i ? "bg-black text-white" : "bg-gray-100"}`}>
-            {i+1} 局
-          </button>
+          <button key={i} onClick={() => setCur(i)} className={`px-2 py-1 rounded text-xs ${cur===i ? "bg-black text-white" : "bg-gray-100"}`}>{i+1} 局</button>
         ))}
       </div>
 
@@ -1357,22 +1330,17 @@ const InningEditor = ({ g }: { g: Game }) => {
 
             {offense ? (
               <>
-                {/* 攻擊：打擊 + 跑壘 */}
-                <div className="overflow-x-auto">
-                  <table className="border text-xs w-full mb-2">
-                    <thead>
-                      <tr>{Object.keys(initBatting()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                    </thead>
+                {/* 攻擊：打擊 */}
+                <div className="overflow-x-auto mb-2">
+                  <table className="border text-xs w-full">
+                    <thead><tr>{Object.keys(initBatting()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr></thead>
                     <tbody>
                       {g.lineup.map((pid) => (
                         <tr key={pid}>
                           {Object.keys(initBatting()).map((stat) => (
                             <td key={stat} className="border px-2 py-1 text-center">
-                              {g.locked ? toNonNegNum(((data.batting || {})[pid]||{})[stat]) : (
-                                <NumCell
-                                  value={toNonNegNum(((data.batting || {})[pid]||{})[stat])}
-                                  onCommit={(n) => updateHalfStat(g.id, cur, half, "batting", pid, stat, n)}
-                                />
+                              {g.locked ? toNonNegNum(((data.batting||{})[pid]||{})[stat]) : (
+                                <NumCell value={toNonNegNum(((data.batting||{})[pid]||{})[stat])} onCommit={(n) => updateHalfStat(g.id, cur, half, "batting", pid, stat, n)} />
                               )}
                             </td>
                           ))}
@@ -1382,21 +1350,17 @@ const InningEditor = ({ g }: { g: Game }) => {
                   </table>
                 </div>
 
+                {/* 攻擊：跑壘 */}
                 <div className="overflow-x-auto">
                   <table className="border text-xs w-full">
-                    <thead>
-                      <tr>{Object.keys(initBaserun()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                    </thead>
+                    <thead><tr>{Object.keys(initBaserun()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr></thead>
                     <tbody>
                       {g.lineup.map((pid) => (
                         <tr key={pid}>
                           {Object.keys(initBaserun()).map((stat) => (
                             <td key={stat} className="border px-2 py-1 text-center">
-                              {g.locked ? toNonNegNum(((data.baserunning || {})[pid]||{})[stat]) : (
-                                <NumCell
-                                  value={toNonNegNum(((data.baserunning || {})[pid]||{})[stat])}
-                                  onCommit={(n) => updateHalfStat(g.id, cur, half, "baserunning", pid, stat, n)}
-                                />
+                              {g.locked ? toNonNegNum(((data.baserunning||{})[pid]||{})[stat]) : (
+                                <NumCell value={toNonNegNum(((data.baserunning||{})[pid]||{})[stat])} onCommit={(n) => updateHalfStat(g.id, cur, half, "baserunning", pid, stat, n)} />
                               )}
                             </td>
                           ))}
@@ -1408,15 +1372,10 @@ const InningEditor = ({ g }: { g: Game }) => {
               </>
             ) : (
               <>
-                {/* 守備：投手（單選） + 守備 */}
+                {/* 守備：投手 + 守備 */}
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-sm">當局投手：</span>
-                  <select
-                    disabled={g.locked}
-                    value={data.pitcherPid ?? ""}
-                    onChange={(e) => setHalfPitcher(g.id, cur, half, e.target.value ? Number(e.target.value) : undefined)}
-                    className="border px-2 py-1 rounded"
-                  >
+                  <select disabled={g.locked} value={data.pitcherPid ?? ""} onChange={(e) => setHalfPitcher(g.id, cur, half, e.target.value ? Number(e.target.value) : undefined)} className="border px-2 py-1 rounded">
                     <option value="">未指定</option>
                     {g.lineup.filter(pid => (getNameAndPositions(players, g, pid).positions || []).includes("P")).map(pid => (
                       <option key={pid} value={pid}>{getNameAndPositions(players, g, pid).name}</option>
@@ -1427,18 +1386,13 @@ const InningEditor = ({ g }: { g: Game }) => {
                 {data.pitcherPid && (
                   <div className="overflow-x-auto mb-2">
                     <table className="border text-xs w-full">
-                      <thead>
-                        <tr>{Object.keys(initPitching()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                      </thead>
+                      <thead><tr>{Object.keys(initPitching()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr></thead>
                       <tbody>
                         <tr>
                           {Object.keys(initPitching()).map((stat) => (
                             <td key={stat} className="border px-2 py-1 text-center">
-                              {g.locked ? toNonNegNum(((data.pitching || {})[data.pitcherPid]||{})[stat]) : (
-                                <NumCell
-                                  value={toNonNegNum(((data.pitching || {})[data.pitcherPid]||{})[stat])}
-                                  onCommit={(n) => updateHalfStat(g.id, cur, half, "pitching", Number(data.pitcherPid), stat, n)}
-                                />
+                              {g.locked ? toNonNegNum(((data.pitching||{})[data.pitcherPid]||{})[stat]) : (
+                                <NumCell value={toNonNegNum(((data.pitching||{})[data.pitcherPid]||{})[stat])} onCommit={(n) => updateHalfStat(g.id, cur, half, "pitching", Number(data.pitcherPid), stat, n)} />
                               )}
                             </td>
                           ))}
@@ -1450,19 +1404,14 @@ const InningEditor = ({ g }: { g: Game }) => {
 
                 <div className="overflow-x-auto">
                   <table className="border text-xs w-full">
-                    <thead>
-                      <tr>{Object.keys(initFielding()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                    </thead>
+                    <thead><tr>{Object.keys(initFielding()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr></thead>
                     <tbody>
                       {g.lineup.map((pid) => (
                         <tr key={pid}>
                           {Object.keys(initFielding()).map((stat) => (
                             <td key={stat} className="border px-2 py-1 text-center">
-                              {g.locked ? toNonNegNum(((data.fielding || {})[pid]||{})[stat]) : (
-                                <NumCell
-                                  value={toNonNegNum(((data.fielding || {})[pid]||{})[stat])}
-                                  onCommit={(n) => updateHalfStat(g.id, cur, half, "fielding", pid, stat, n)}
-                                />
+                              {g.locked ? toNonNegNum(((data.fielding||{})[pid]||{})[stat]) : (
+                                <NumCell value={toNonNegNum(((data.fielding||{})[pid]||{})[stat])} onCommit={(n) => updateHalfStat(g.id, cur, half, "fielding", pid, stat, n)} />
                               )}
                             </td>
                           ))}
@@ -1479,8 +1428,7 @@ const InningEditor = ({ g }: { g: Game }) => {
     </div>
   );
 };
-
-  /* ---------------- UI：Compare ---------------- */
+/* ---------------- UI：Compare ---------------- */
   const Compare = () => {
     const compareLive = compare.filter((id) => players.some((p) => p.id === id));
     const METRICS = ["AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"];
