@@ -140,7 +140,11 @@ const STORAGE = {
   players: "rsbm.players.v2",
   games:   "rsbm.games.v2",
   compare: "rsbm.compare.v1",
-};
+,
+  compareSelH: "rsbm.compare.sel.h",
+  compareSelP: "rsbm.compare.sel.p",
+  compareSelF: "rsbm.compare.sel.f",
+};;
 
 const toNonNegNum = (v: any) => {
   const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0;
@@ -1292,129 +1296,259 @@ return (
 
   /* ---------------- UI：Compare ---------------- */
   const Compare = () => {
-    const compareLive = compare.filter((id) => players.some((p) => p.id === id));
-    const METRICS = ["AB","H","AVG","OBP","SLG","OPS","ERA","WHIP","K9","FIP","FPCT"];
-    const CHART_METRICS = ["AVG","OBP","SLG","OPS","ERA","WHIP","K9","FPCT"];
-    const colors = ["#8884d8","#82ca9d","#ffc658","#ff8a65","#90caf9"];
-    const [compareView, setCompareView] = useState<"table" | "trend">("table");
+  // 可用指標（分群）
+  const ALL = {
+    hitter: ["AB","H","AVG","OBP","SLG","OPS","R","RBI","TB","TOB","RC","BBK","SB","SBP"],
+    pitcher: ["ERA","WHIP","K9","BB9","H9","KBB","FIP","OBA","PC"],
+    field: ["FPCT"],
+  } as const;
 
-const makeRow = (stat: string) => {
-      const row: Record<string, number | string> = { stat };
+  // 哪些指標是「高者為佳」（未列出的預設 true）
+  const higherIsBetter: Record<string, boolean> = {
+    ERA: false, WHIP: false, BB9: false, H9: false, OBA: false, PC: false,
+    CS: false, // 若將來加入 CS，低才好
+  };
+
+  // 顯示小數位數
+  const dp3 = new Set(["AVG","OBP","SLG","OPS","FPCT","OBA"]);
+  const dp2 = new Set(["ERA","WHIP","K9","BB9","H9","KBB","FIP"]);
+  const percent = new Set(["SBP"]);
+
+  // 選擇要比較的指標（從 localStorage 還原）
+  const pick = (key: string, fallback: string[]) => {
+    if (typeof window === "undefined") return fallback;
+    try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; }
+  };
+  const [selH, setSelH] = useState<string[]>(() => pick(STORAGE.compareSelH, ["AVG","OBP","SLG","OPS"]));
+  const [selP, setSelP] = useState<string[]>(() => pick(STORAGE.compareSelP, ["ERA","WHIP","K9"]));
+  const [selF, setSelF] = useState<string[]>(() => pick(STORAGE.compareSelF, ["FPCT"]));
+
+  // 持久化
+  useDebouncedLocalStorage(STORAGE.compareSelH, selH, 200);
+  useDebouncedLocalStorage(STORAGE.compareSelP, selP, 200);
+  useDebouncedLocalStorage(STORAGE.compareSelF, selF, 200);
+
+  const compareLive = compare.filter((id) => players.some((p) => p.id === id));
+  const colors = ["#8884d8","#82ca9d","#ffc658","#ff8a65","#90caf9","#a78bfa","#34d399"];
+
+  // 構建一行資料：{ stat, playerA: val, playerB: val, ... }
+  const makeRow = (stat: string) => {
+    const row: Record<string, number | string> = { stat };
+    compareLive.forEach((id) => {
+      const p = players.find((x) => x.id === id); if (!p) return;
+      const s = calcStats(p.batting ?? initBatting(), p.pitching ?? initPitching(), p.fielding ?? initFielding(), p.baserunning ?? initBaserun());
+      const v = parseFloat((s as any)[stat]) || 0;
+      row[p.name] = Number.isFinite(v) ? v : 0;
+    });
+    return row;
+  };
+
+  const metricsTable = [...selH, ...selP, ...selF];
+  const tableBody = metricsTable.map(makeRow);
+
+  // 格式化顯示
+  const fmt = (stat: string, vRaw: any) => {
+    const v = Number(vRaw) || 0;
+    if (percent.has(stat)) return v.toFixed(1) + "%";
+    if (dp3.has(stat)) return v.toFixed(3);
+    if (dp2.has(stat)) return v.toFixed(2);
+    return String(Math.round(v));
+  };
+
+  // 雷達圖資料拆成「打者」「投手」
+  const hitterRadar = selH.map(makeRow);
+  const pitcherRadar = selP.map(makeRow);
+
+  const getMax = (rows: any[]) => {
+    let max = 0;
+    rows.forEach((row) => {
       compareLive.forEach((id) => {
-        const p = players.find((x) => x.id === id); if (!p) return;
-        const s = calcStats(p.batting ?? initBatting(), p.pitching ?? initPitching(), p.fielding ?? initFielding(), p.baserunning ?? initBaserun());
-        const v = parseFloat((s as any)[stat]) || 0; row[p.name] = Number.isFinite(v) ? v : 0;
+        const name = players.find((p) => p.id === id)?.name;
+        const v = name ? Number((row as any)[name]) || 0 : 0;
+        if (v > max) max = v;
       });
-      return row;
-    };
+    });
+    return max || 1;
+  };
+  const niceMax = (x: number) => {
+    if (x <= 1) return 1;
+    if (x <= 1.2) return 1.2;
+    if (x <= 2) return 2;
+    if (x <= 5) return 5;
+    if (x <= 10) return 10;
+    if (x <= 15) return 15;
+    return Math.ceil(x);
+  };
+  const hitterMax = niceMax(getMax(hitterRadar));
+  const pitcherMax = niceMax(getMax(pitcherRadar));
 
-    const tableBody = METRICS.map(makeRow);
-    const chartData = CHART_METRICS.map(makeRow);
-
+  // UI：勾選器
+  const MetricPicker = ({ title, all, sel, setSel }:{ title:string; all:string[]; sel:string[]; setSel: (v:string[])=>void }) => {
+    const toggle = (m:string) => setSel(sel.includes(m) ? sel.filter(x=>x!==m) : [...sel, m]);
+    const allOn = () => setSel(all);
+    const none = () => setSel([]);
     return (
-      <div className="space-y-4">
+      <div className="bg-white border rounded p-2">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="font-semibold text-sm">{title}</div>
+          <button onClick={allOn} className="text-xs bg-gray-100 px-2 py-0.5 rounded">全選</button>
+          <button onClick={none} className="text-xs bg-gray-100 px-2 py-0.5 rounded">清空</button>
+        </div>
         <div className="flex flex-wrap gap-2">
-          {players.map((p) => (
-            <label key={p.id} className="border px-2 py-1 rounded text-sm">
-              <input type="checkbox" className="mr-1"
-                checked={compare.includes(p.id)}
-                onChange={(e) => setCompare((prev) => (e.target.checked ? [...prev, p.id] : prev.filter((x) => x !== p.id)))} />
-              {p.name}
+          {all.map((m) => (
+            <label key={m} className={`px-2 py-1 rounded border text-xs cursor-pointer ${sel.includes(m) ? "bg-black text-white" : "bg-white"}`}>
+              <input type="checkbox" className="mr-1" checked={sel.includes(m)} onChange={()=>toggle(m)} />
+              {m}
             </label>
           ))}
         </div>
-{/* 表格 / 趨勢圖 切換鈕（放在選人區後、靠右） */}
-<div className="flex items-center">
-  <div className="ml-auto flex items-center gap-1 bg-slate-100 rounded-full p-1">
-    <button
-      onClick={() => setCompareView("table")}
-      className={`px-3 py-1 rounded-full text-xs md:text-sm ${
-        compareView === "table" ? "bg-white shadow" : "opacity-70 hover:opacity-100"
-      }`}
-    >
-      表格
-    </button>
-    <button
-      onClick={() => setCompareView("trend")}
-      className={`px-3 py-1 rounded-full text-xs md:text-sm ${
-        compareView === "trend" ? "bg-white shadow" : "opacity-70 hover:opacity-100"
-      }`}
-    >
-      趨勢圖
-    </button>
-  </div>
-</div>
-
-       {compareLive.length >= 2 ? (
-  compareView === "table" ? (
-    <>
-      {/* 原本的表格 */}
-      <div className="overflow-x-auto">
-        <table className="border text-sm w-full bg-white">
-          <thead>
-            <tr>
-              <th className="border px-2 py-1">指標</th>
-              {compareLive.map((id) => (
-                <th key={id} className="border px-2 py-1">
-                  {players.find((p) => p.id === id)?.name ?? `#${id}`}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {tableBody.map((row) => (
-              <tr key={row.stat as string}>
-                <td className="border px-2 py-1">{row.stat as string}</td>
-                {compareLive.map((id) => {
-                  const name = players.find((p) => p.id === id)?.name;
-                  return (
-                    <td key={id} className="border px-2 py-1 text-right">
-                      {name ? (row as any)[name] : "-"}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* 原本的長條＋雷達（保留不動） */}
-      <ResponsiveContainer width="100%" height={320}>
-        <BarChart data={chartData}>
-          <XAxis dataKey="stat" /><YAxis /><Tooltip /><Legend />
-          {compareLive.map((id, i) => {
-            const name = players.find((p) => p.id === id)?.name;
-            return name ? <Bar key={id} dataKey={name} fill={colors[i % colors.length]} /> : null;
-          })}
-        </BarChart>
-      </ResponsiveContainer>
-
-      <ResponsiveContainer width="100%" height={360}>
-        <RadarChart data={chartData}>
-          <PolarGrid /><PolarAngleAxis dataKey="stat" /><PolarRadiusAxis />
-          {compareLive.map((id, i) => {
-            const name = players.find((p) => p.id === id)?.name;
-            return name ? (
-              <Radar key={id} name={name} dataKey={name}
-                stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.3} />
-            ) : null;
-          })}
-          <Legend />
-        </RadarChart>
-      </ResponsiveContainer>
-    </>
-  ) : (
-    // 這裡改成直接顯示趨勢圖（沿用你現有的 TrendTab）
-    <TrendTab games={games} />
-  )
-) : (
-  <div className="text-sm text-gray-500">請至少勾選兩位球員進行對比。</div>
-)}
-
       </div>
     );
   };
+
+  // 判定每列誰比較好（支援同值並列高亮）
+  const bestMap: Record<string, Set<string>> = {};
+  tableBody.forEach((row) => {
+    const stat = String(row.stat);
+    const vals: {name:string; v:number}[] = [];
+    compareLive.forEach((id) => {
+      const name = players.find((p) => p.id === id)?.name;
+      if (!name) return;
+      const v = Number((row as any)[name]) || 0;
+      vals.push({ name, v });
+    });
+    if (vals.length === 0) return;
+    const hi = higherIsBetter[stat] !== false;
+    const target = hi ? Math.max(...vals.map(x=>x.v)) : Math.min(...vals.map(x=>x.v));
+    const winners = new Set(vals.filter(x => Math.abs(x.v - target) < 1e-9).map(x => x.name));
+    bestMap[stat] = winners;
+  });
+
+  const [compareView, setCompareView] = useState<"table" | "trend">("table");
+
+  return (
+    <div className="space-y-4">
+      {/* 選擇球員 */}
+      <div className="flex flex-wrap gap-2">
+        {players.map((p) => (
+          <label key={p.id} className="border px-2 py-1 rounded text-sm">
+            <input type="checkbox" className="mr-1"
+              checked={compare.includes(p.id)}
+              onChange={(e) => setCompare((prev) => (e.target.checked ? [...prev, p.id] : prev.filter((x) => x !== p.id)))} />
+            {p.name}
+          </label>
+        ))}
+      </div>
+
+      {/* 指標挑選器 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <MetricPicker title="打者指標" all={[...ALL.hitter]} sel={selH} setSel={setSelH} />
+        <MetricPicker title="投手指標" all={[...ALL.pitcher]} sel={selP} setSel={setSelP} />
+        <MetricPicker title="守備/其他" all={[...ALL.field]} sel={selF} setSel={setSelF} />
+      </div>
+
+      {/* 視圖切換 */}
+      <div className="flex items-center">
+        <div className="ml-auto flex items-center gap-1 bg-slate-100 rounded-full p-1">
+          <button
+            onClick={() => setCompareView("table")}
+            className={`px-3 py-1 rounded-full text-xs md:text-sm ${compareView === "table" ? "bg-white shadow" : "opacity-70 hover:opacity-100"}`}
+          >表格</button>
+          <button
+            onClick={() => setCompareView("trend")}
+            className={`px-3 py-1 rounded-full text-xs md:text-sm ${compareView === "trend" ? "bg-white shadow" : "opacity-70 hover:opacity-100"}`}
+          >趨勢圖</button>
+        </div>
+      </div>
+
+      {compareLive.length >= 2 ? (
+        compareView === "table" ? (
+          <>
+            {/* 對比表格（較好者高亮） */}
+            <div className="overflow-x-auto">
+              <table className="border text-sm w-full bg-white">
+                <thead>
+                  <tr>
+                    <th className="border px-2 py-1">指標</th>
+                    {compareLive.map((id) => (
+                      <th key={id} className="border px-2 py-1">
+                        {players.find((p) => p.id === id)?.name ?? `#${id}`}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableBody.map((row) => {
+                    const stat = String(row.stat);
+                    return (
+                      <tr key={stat}>
+                        <td className="border px-2 py-1">{stat}</td>
+                        {compareLive.map((id) => {
+                          const name = players.find((p) => p.id === id)?.name;
+                          const val = name ? (row as any)[name] : null;
+                          const isBest = !!(name && bestMap[stat]?.has(name));
+                          return (
+                            <td key={id} className={`border px-2 py-1 text-right ${isBest ? "bg-yellow-100 font-semibold" : ""}`}>
+                              {name ? fmt(stat, val) : "-"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 拆成兩張雷達圖 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="w-full h-80">
+                <ResponsiveContainer>
+                  <RadarChart data={hitterRadar}>
+                    <PolarGrid /><PolarAngleAxis dataKey="stat" />
+                    <PolarRadiusAxis domain={[0, hitterMax]} />
+                    {compareLive.map((id, i) => {
+                      const name = players.find((p) => p.id === id)?.name;
+                      return name ? (
+                        <Radar key={id} name={name} dataKey={name}
+                          stroke={colors[i % colors.length]}
+                          fill={colors[i % colors.length]}
+                          fillOpacity={0.3} />
+                      ) : null;
+                    })}
+                    <Legend />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="w-full h-80">
+                <ResponsiveContainer>
+                  <RadarChart data={pitcherRadar}>
+                    <PolarGrid /><PolarAngleAxis dataKey="stat" />
+                    <PolarRadiusAxis domain={[0, pitcherMax]} />
+                    {compareLive.map((id, i) => {
+                      const name = players.find((p) => p.id === id)?.name;
+                      return name ? (
+                        <Radar key={id} name={name} dataKey={name}
+                          stroke={colors[i % colors.length]}
+                          fill={colors[i % colors.length]}
+                          fillOpacity={0.3} />
+                      ) : null;
+                    })}
+                    <Legend />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        ) : (
+          <TrendTab games={games} />
+        )
+      ) : (
+        <div className="text-sm text-gray-500">請至少勾選兩位球員進行對比。</div>
+      )}
+    </div>
+  );
+};
 // --- 趨勢圖分頁（放在 Compare 後、ExportPanel 前） ---
 type TrendTabProps = { games: Game[] };
 
