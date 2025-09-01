@@ -140,7 +140,6 @@ const STORAGE = {
   players: "rsbm.players.v2",
   games:   "rsbm.games.v2",
   compare: "rsbm.compare.v1",
-,
   compareSelH: "rsbm.compare.sel.h",
   compareSelP: "rsbm.compare.sel.p",
   compareSelF: "rsbm.compare.sel.f",
