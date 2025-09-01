@@ -1330,35 +1330,22 @@ return (
   };
 
   const aggregateFromGames = (playerId: number) => {
-    const b = initBatting();       // 打擊
-    const p = initPitching();      // 投手
-    const f = initFielding();      // 守備
-    const r = initBaserunLocal();  // 跑壘
+  const b = initBatting();       // 打擊
+  const p = initPitching();      // 投手
+  const f = initFielding();      // 守備
+  const r = initBaserun();       // 跑壘
 
-    for (const g of games) {
-      // 打者
-      for (const ln of linesOf(g, ["batters","hitters","batting","bats","boxBatting"])) {
-        const L = normalizeLine(ln);
-        if (isPlayerLine(L, playerId)) addAllNumbers(b, L);
-      }
-      // 投手
-      for (const ln of linesOf(g, ["pitchers","pitching","pit","boxPitching"])) {
-        const L = normalizeLine(ln);
-        if (isPlayerLine(L, playerId)) addAllNumbers(p, L);
-      }
-      // 守備
-      for (const ln of linesOf(g, ["fielding","fielders","boxFielding"])) {
-        const L = normalizeLine(ln);
-        if (isPlayerLine(L, playerId)) addAllNumbers(f, L);
-      }
-      // 跑壘
-      for (const ln of linesOf(g, ["baserunning","base","boxBaserun"])) {
-        const L = normalizeLine(ln);
-        if (isPlayerLine(L, playerId)) addAllNumbers(r, L);
-      }
-    }
-    return { batting: b, pitching: p, fielding: f, baserunning: r };
-  };
+  for (const g of games) {
+    const cur = g?.stats?.[playerId];
+    if (!cur) continue;
+
+    (Object.keys(b) as (keyof Batting)[]).forEach((k) => (b[k] += toNonNegNum((cur.batting as any)[k])));
+    (Object.keys(p) as (keyof Pitching)[]).forEach((k) => (p[k] += toNonNegNum((cur.pitching as any)[k])));
+    (Object.keys(f) as (keyof Fielding)[]).forEach((k) => (f[k] += toNonNegNum((cur.fielding as any)[k])));
+    (Object.keys(r) as (keyof Baserun)[]).forEach((k) => (r[k] += toNonNegNum((cur.baserunning as any)[k])));
+  }
+  return { batting: b, pitching: p, fielding: f, baserunning: r };
+};
 
 
 
