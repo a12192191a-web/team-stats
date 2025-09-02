@@ -985,32 +985,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
             </select>
           </div>
 
-          {pitcherPid !== '' && (
-            <div className="overflow-x-auto mb-2">
-              <table className="border text-xs w-full">
-                <thead>
-                  <tr>{Object.keys(initPitching()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {Object.keys(initPitching()).map((stat) => {
-                      const pid = Number(pitcherPid);
-                      const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
-                      const isIP = stat == "IP";
-                      const key = `${g.id}:${pid}`
-                      const rawValue = (cur.pitching as any)[stat];
-                      return (
-                        <td key={stat} className="border px-2 py-1 text-center">
-                          {g.locked ? (
-                            isIP ? formatIpDisplay(ipToInnings(rawValue)) : toNonNegNum(rawValue)
-                          ) : isIP ? (
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.1}
-                              className={IN_NUM_GRID}
-                              value={ipDraft[key] ?? String(rawValue ?? "")}
-                              onChange={(e) => {
+          onChange={(e) => {
                                 const prev = Number(ipDraft[key] ?? rawValue ?? 0) || 0;
                                 const raw  = parseFloat(e.target.value || "0");
                                 const next = stepIpValue(prev, raw);
@@ -1042,8 +1017,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
             </div>
           )}
 
-          {/* 守備（逐人） */}
-          <div className="overflow-x-auto">
+                    <div className="overflow-x-auto">
             <table className="border text-xs w-full">
               <thead>
                 <tr>{Object.keys(initFielding()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
