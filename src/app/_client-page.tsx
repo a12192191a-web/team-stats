@@ -6,7 +6,7 @@ const LS_GAMES   = "rsbm.games.v2";
 const LS_BACKUP  = "rsbm.autosave.backup";
 const SS_ONCE    = "rsbm.forceReload.once";
 
-function getBuildIdFromHtml(html) {
+function getBuildIdFromHtml(html: string): string | null {
   const m = html.match(/"buildId"\s*:\s*"([A-Za-z0-9\-_.]+)"/);
   return m ? m[1] : null;
 }
@@ -1088,6 +1088,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
 
   
 const BoxScore = () => {
+  useHotUpdateWithAutosave(players, games);
   const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
   const filteredGames = games.filter(g => modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab));
   return (
