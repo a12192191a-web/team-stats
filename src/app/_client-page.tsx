@@ -1307,7 +1307,7 @@ return (
             </div>
           </div>
 
-          {/* 每位球員本場輸入（新增：半局步進式輸入） */}\n          <HalfStepper g={g} />\n\n          {/* 每位球員本場輸入 */}
+          {/* 每位球員本場輸入（新增：半局步進式輸入） */}          <HalfStepper g={g} />          {/* 每位球員本場輸入 */}
           <div className="space-y-3">
             {g.lineup.map((pid) => {
               const info = getNameAndPositions(players, g, pid);
