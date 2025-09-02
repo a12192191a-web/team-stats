@@ -1,28 +1,68 @@
 "use client";
 
-// -------- Auto Update Settings --------
-const AUTO_UPDATE_KEY = "rsbm.autoUpdate";
-function getAutoUpdatePref(): boolean {
-  if (typeof window === "undefined") return false;
-  const v = localStorage.getItem(AUTO_UPDATE_KEY);
-  return v === "1";
+// ===== Hot Update with Autosave =====
+const LS_PLAYERS = "rsbm.players.v2";
+const LS_GAMES   = "rsbm.games.v2";
+const LS_BACKUP  = "rsbm.autosave.backup";
+const SS_ONCE    = "rsbm.forceReload.once";
+
+function getBuildIdFromHtml(html) {
+  const m = html.match(/"buildId"\s*:\s*"([A-Za-z0-9\-_.]+)"/);
+  return m ? m[1] : null;
 }
-function setAutoUpdatePref(on: boolean) {
-  try { localStorage.setItem(AUTO_UPDATE_KEY, on ? "1" : "0"); } catch {}
-}
-function useAutoUpdate(enabled: boolean) {
+
+function useHotUpdateWithAutosave(players: any, games: any) {
+  // A) 直進系統就刷新（每個分頁只做一次，避免死循環）
   useEffect(() => {
-    if (!enabled) return;
-    // 為避免無限重整：每個 Tab 只在首次載入時重整一次
     try {
-      const key = "rsbm.autoUpdate.once";
-      if (!sessionStorage.getItem(key)) {
-        sessionStorage.setItem(key, "1");
-        // 稍等一下讓頁面完成 hydration 再重整
-        setTimeout(() => { try { location.reload(); } catch {} }, 200);
+      if (!sessionStorage.getItem(SS_ONCE)) {
+        sessionStorage.setItem(SS_ONCE, "1");
+        location.reload();
       }
     } catch {}
-  }, [enabled]);
+  }, []);
+
+  // B) 使用中若發現有新版本：先存，再刷新
+  useEffect(() => {
+    let alive = true;
+    const currentId = (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
+
+    const check = async () => {
+      try {
+        const res = await fetch("/", { cache: "no-store" });
+        const html = await res.text();
+        const latest = getBuildIdFromHtml(html);
+        if (!alive) return;
+        if (currentId && latest && latest !== currentId) {
+          // 先本端存檔
+          try {
+            localStorage.setItem(LS_PLAYERS, JSON.stringify(players));
+            localStorage.setItem(LS_GAMES,   JSON.stringify(games));
+            localStorage.setItem(LS_BACKUP,  JSON.stringify({ ts: Date.now(), players, games }));
+          } catch {}
+
+          // 再自動刷新頁面
+          location.reload();
+        }
+      } catch {}
+    };
+
+    // 定時檢查 + 聚焦檢查
+    const tid = setInterval(check, 60000);
+    const onFocus = () => check();
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    // 首次也檢查一次（避免等一分鐘）
+    setTimeout(check, 5000);
+
+    return () => {
+      alive = false;
+      clearInterval(tid);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [players, games]);
 }
 
 
@@ -58,7 +98,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 type VoidFn = () => void | Promise<void>;
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
-function useFloatingCheckUpdateButton_DISABLED(onClick?: VoidFn) {
+function useFloatingCheckUpdateButton(onClick?: VoidFn) {
   const router = useRouter();
   useEffect(() => {
     const id = "check-update-float-btn";
@@ -1048,10 +1088,6 @@ const HalfStepper = ({ g }: { g: Game }) => {
 
   
 const BoxScore = () => {
-  const [autoUpdate, setAutoUpdate] = useState<boolean>(getAutoUpdatePref());
-  useEffect(() => setAutoUpdatePref(autoUpdate), [autoUpdate]);
-  useAutoUpdate(autoUpdate);
-
   const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
   const filteredGames = games.filter(g => modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab));
   return (
@@ -1065,12 +1101,6 @@ const BoxScore = () => {
   <button onClick={() => setModeTab("all")} className={"px-3 py-1 text-sm " + (modeTab==="all" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>全部</button>
   <button onClick={() => setModeTab("classic")} className={"px-3 py-1 text-sm border-l " + (modeTab==="classic" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>傳統</button>
   <button onClick={() => setModeTab("inning")} className={"px-3 py-1 text-sm border-l " + (modeTab==="inning" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>逐局</button>
-</div>
-<div className="ml-3 inline-flex items-center gap-2 text-sm">
-  <label className="inline-flex items-center gap-1">
-    <input type="checkbox" checked={autoUpdate} onChange={(e)=>setAutoUpdate(e.target.checked)} />
-    自動更新
-  </label>
 </div>
     </div>
 
