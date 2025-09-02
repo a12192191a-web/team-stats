@@ -862,14 +862,13 @@ function isOffenseHalfSimple(g: Game, isTop: boolean) {
   return g.startDefense ? !isTop : isTop;
 }
 
-/* 單半局步進式輸入（沿用本檔 NumCell / IP 輸入邏輯，不改計算） */
+/* 單半局步進式輸入（防守半局只保留「當局投手」下拉；不顯示投手/守備三列） */
 const HalfStepper = ({ g }: { g: Game }) => {
   const [step, setStep] = useState(0);                  // 0..(9*2-1)
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
   const offense = isOffenseHalfSimple(g, isTop);
 
-  // 當局投手本地選擇（不持久化；只是決定要編輯誰的投手數據）
   const pCandidates = g.lineup.filter(pid => (getNameAndPositions(players, g, pid).positions || []).includes("P"));
   const [pitcherPid, setPitcherPidLocal] = useState<number | ''>(pCandidates[0] ?? '');
   useEffect(() => {
@@ -909,7 +908,6 @@ const HalfStepper = ({ g }: { g: Game }) => {
         </select>
       </div>
 
-      {/* 半局內容 */}
       {offense ? (
         <>
           {/* 攻擊：逐人打擊 + 跑壘；即時寫回 g.stats（沿用 NumCell 行為） */}
@@ -969,7 +967,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
         </>
       ) : (
         <>
-          {/* 守備：當局投手 + 全隊守備（沿用 IP 特別輸入邏輯） */}
+          {/* 守備半局：只留『當局投手』下拉，不顯示投手/守備三列 */}
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm">當局投手：</span>
             <select
@@ -983,65 +981,6 @@ const HalfStepper = ({ g }: { g: Game }) => {
                 <option key={pid} value={pid}>{getNameAndPositions(players, g, pid).name}</option>
               ))}
             </select>
-          </div>
-
-          onChange={(e) => {
-                                const prev = Number(ipDraft[key] ?? rawValue ?? 0) || 0;
-                                const raw  = parseFloat(e.target.value || "0");
-                                const next = stepIpValue(prev, raw);
-                                setIpDraft((d) => ({ ...d, [key]: String(next) }));
-                                const diffTenth = Math.round((raw - prev) * 10);
-                                if (diffTenth === 1 || diffTenth === -1) {
-                                  updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(next));
-                                }
-                              }}
-                              onBlur={() => {
-                                const v = ipDraft[key];
-                                const next = stepIpValue(Number(rawValue || 0), Number(v || "0"));
-                                updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(next));
-                                setIpDraft((d) => { const { [key]: _, ...rest } = d; return rest; });
-                              }}
-                            />
-                          ) : (
-                            <NumCell
-                              value={toNonNegNum(rawValue)}
-                              onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)}
-                            />
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
-
-                    <div className="overflow-x-auto">
-            <table className="border text-xs w-full">
-              <thead>
-                <tr>{Object.keys(initFielding()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-              </thead>
-              <tbody>
-                {g.lineup.map((pid) => {
-                  const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
-                  return (
-                    <tr key={pid}>
-                      {Object.keys(initFielding()).map((stat) => (
-                        <td key={stat} className="border px-2 py-1 text-center">
-                          {g.locked ? toNonNegNum((cur.fielding as any)[stat]) : (
-                            <NumCell
-                              value={toNonNegNum((cur.fielding as any)[stat])}
-                              onCommit={(n) => updateGameStat(g.id, pid, "fielding", stat, n)}
-                            />
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
           </div>
         </>
       )}
@@ -1283,6 +1222,136 @@ return (
 
           {/* 逐局（單半局）輸入 */}
           <HalfStepper g={g} />
+
+          {/* 每位球員本場輸入 */}
+          <div className="space-y-3">
+            {g.lineup.map((pid) => {
+              const info = getNameAndPositions(players, g, pid);
+              const cur = g.stats[pid] ?? emptyTriple();
+              const readOnly = g.locked;
+
+              return (
+                <div key={pid} className="border rounded p-2">
+  <div className="font-semibold mb-1">{info.name}</div>
+
+                  {/* 打擊 */}
+                  <table className="border text-sm mb-2 w-full">
+                    <thead>
+                      <tr>{Object.keys(initBatting()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        {Object.keys(initBatting()).map((stat) => (
+                          <td key={stat} className="border px-2 py-1 text-center">
+                            {readOnly ? toNonNegNum((cur.batting as any)[stat]) : (
+                              <NumCell value={toNonNegNum((cur.batting as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "batting", stat, n)} />
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+
+                {/* 投手（僅 P 顯示） */}
+{info.positions.includes("P") && (
+  <table className="border text-sm mb-2 w-full">
+    <thead>
+      <tr>
+        {Object.keys(initPitching()).map((k) => (
+          <th key={k} className="border px-2 py-1">{k}</th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        {Object.keys(initPitching()).map((stat) => {
+  const isIP = stat === "IP";
+  const key = `${g.id}:${pid}`;                 // 每場比賽 × 球員 的唯一 key
+  const rawValue = (cur.pitching as any)[stat]; // 現存的數值
+
+  return (
+    <td key={stat} className="border px-2 py-1 text-center">
+     {readOnly ? (
+ isIP ? formatIpDisplay(ipToInnings(rawValue)) : toNonNegNum(rawValue)
+) : isIP ? (
+
+<input
+  type="number"
+  min={0}
+  step={0.1}
+  className={IN_NUM_GRID}
+  value={ipDraft[key] ?? String(rawValue ?? "")}
+  onChange={(e) => {
+    const prev = Number(ipDraft[key] ?? rawValue ?? 0) || 0;
+    const raw  = parseFloat(e.target.value || "0");
+    const next = stepIpValue(prev, raw);
+
+    // 先把顯示值變成合法的 0 / 0.1 / 0.2 / 整數
+    setIpDraft((d) => ({ ...d, [key]: String(next) }));
+
+    // 如果是按上下箭頭（±0.1），立即寫回資料
+    const diffTenth = Math.round((raw - prev) * 10);
+    if (diffTenth === 1 || diffTenth === -1) {
+      updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(next));
+    }
+  }}
+  onBlur={() => {
+    const v = ipDraft[key];
+    const next = stepIpValue(Number(rawValue || 0), Number(v || "0"));
+    updateGameStat(g.id, pid, "pitching", "IP", toNonNegNum(next));
+    setIpDraft((d) => { const { [key]: _, ...rest } = d; return rest; });
+  }}
+/>
+
+      ) : (
+                <NumCell value={toNonNegNum(rawValue)} onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)} />
+              )}
+            </td>
+          );
+        })}
+      </tr>
+    </tbody>
+  </table>
+)}
+                 {/* 跑壘 */}
+                  <table className="border text-sm mb-2 w-full">
+                    <thead>
+                      <tr>{Object.keys(initBaserun()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        {Object.keys(initBaserun()).map((stat) => (
+                          <td key={stat} className="border px-2 py-1 text-center">
+                            {readOnly ? toNonNegNum((cur.baserunning as any)[stat]) : (
+                              <NumCell value={toNonNegNum((cur.baserunning as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "baserunning", stat, n)} />
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* 守備 */}
+                  <table className="border text-sm w-full">
+                    <thead>
+                      <tr>{Object.keys(initFielding()).map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        {Object.keys(initFielding()).map((stat) => (
+                          <td key={stat} className="border px-2 py-1 text-center">
+                            {readOnly ? toNonNegNum((cur.fielding as any)[stat]) : (
+                              <NumCell value={toNonNegNum((cur.fielding as any)[stat])} onCommit={(n) => updateGameStat(g.id, pid, "fielding", stat, n)} />
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
 
           {/* 逐局比分 */}
           <div className="overflow-x-auto md:overflow-x-visible">
