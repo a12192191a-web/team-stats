@@ -113,6 +113,9 @@ type Player = {
 type Triple = { batting: Batting; pitching: Pitching; fielding: Fielding; baserunning: Baserun; };
 type RosterSnapshot = Record<number, { name: string; positions: string[] }>;
 
+type GameMode = "classic" | "inning";
+
+
 type Game = {
   id: number;
   date: string;
@@ -127,7 +130,8 @@ type Game = {
   winPid?: number;   // ← 新增
   lossPid?: number;  // ← 新增
   savePid?: number;  // ← 新增
-  startDefense?: boolean; // 先守(預設 true)。先攻則 false
+  startDefense?: boolean;  // 逐局模式專用：true=先守，false=先攻
+  mode?: GameMode;         // 記錄方式：classic=傳統、inning=逐局
 };
 
 
@@ -208,6 +212,7 @@ function reviveGames(raw: any): Game[] {
   lossPid: Number(g?.lossPid) || undefined, // ← 新增
   savePid: Number(g?.savePid) || undefined, // ← 新增
   startDefense: (g?.startDefense ?? true) ? true : false,
+  mode: (g?.mode === \"inning\" ? \"inning\" : \"classic\"),
 };
 
   });
@@ -600,12 +605,15 @@ const Navbar = () => (
 const addGame = () => {
   const opponent = prompt("對手名稱") || "Unknown";
   const date = localDateStr();
+  const useInning = confirm("這場要用【逐局紀錄】嗎？\n按『確定』逐局／『取消』傳統");
   setGames((prev) => [...prev, {
   id: Date.now(),
   date,
   opponent,
   season: "",            // ← 新增
   tag: "",               // ← 新增
+  startDefense: true,
+  mode: useInning ? "inning" as const : "classic" as const,
   lineup: [],
   innings: Array(9).fill(0),
   stats: {},
@@ -1052,7 +1060,7 @@ return (
 
   </div>
 ) : (
-  <h3 className="font-semibold">{g.date} vs {g.opponent}</h3>
+  <h3 className="font-semibold">{g.date} vs {g.opponent} <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{g.mode === "inning" ? "逐局" : "傳統"}</span></h3>
 )}
 
             <div className="ml-auto flex gap-2">
@@ -1220,8 +1228,8 @@ return (
             </div>
           </div>
 
-          {/* 逐局（單半局）輸入 */}
-          <HalfStepper g={g} />
+          {/* 逐局（單半局）輸入 — 僅在逐局模式顯示 */}
+          {g.mode === "inning" && <HalfStepper g={g} />}
 
           {/* 每位球員本場輸入 */}
           <div className="space-y-3">
