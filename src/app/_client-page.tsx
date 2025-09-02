@@ -1090,50 +1090,49 @@ const HalfStepper = ({ g }: { g: Game }) => {
 const BoxScore = () => {
   useHotUpdateWithAutosave(players, games);
   const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
-  const filteredGames = games.filter(g =>
-    modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab)
-  );
-
+  const [pendingNew, setPendingNew] = useState<GameMode | null>(null);
+  const filteredGames = games.filter(g => modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab));
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="inline-flex items-center bg-slate-100 rounded-full p-1">
-          <button
-            onClick={() => addGameWithMode("classic")}
-            className="px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
-          >
-            新增（傳統）
-          </button>
-          <button
-            onClick={() => addGameWithMode("inning")}
-            className="ml-1 px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
-          >
-            新增（逐局）
-          </button>
-        </div>
+  <div className="space-y-4">
+    <div className="flex items-center gap-2">
+     <div className="inline-flex items-center bg-slate-100 rounded-full p-1">
+  <button
+    onClick={() => setPendingNew("classic")}
+    className="px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
+  >
+    新增（傳統）
+  </button>
+  <button
+    onClick={() => setPendingNew("inning")}
+    className="ml-1 px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
+  >
+    新增（逐局）
+  </button>
+</div>
 
 <div className="ml-2 inline-flex items-center bg-slate-100 rounded-full p-1">
-  {[
-    { key: "all",     label: "全部" },
-    { key: "classic", label: "傳統" },
-    { key: "inning",  label: "逐局" },
-  ].map(({ key, label }) => (
-    <button
-      key={key}
-      onClick={() => setModeTab(key as any)}
-      className={`px-3 py-1 rounded-full text-xs md:text-sm
-        will-change-transform transition-[opacity,transform,background-color,box-shadow]
-        duration-150 ease-linear
-        ${modeTab === key
-          ? "bg-white shadow-sm"
-          : "opacity-70 hover:opacity-100 active:translate-y-px"}`}
-    >
-      {label}
-    </button>
-  ))}
+  <button
+    onClick={() => setModeTab("all")}
+    className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
+      ${modeTab === "all" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
+  >
+    全部
+  </button>
+  <button
+    onClick={() => setModeTab("classic")}
+    className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
+      ${modeTab === "classic" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
+  >
+    傳統
+  </button>
+  <button
+    onClick={() => setModeTab("inning")}
+    className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
+      ${modeTab === "inning" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
+  >
+    逐局
+  </button>
 </div>
-      </div> 
-
 
 
     {filteredGames.map((g) => {
@@ -1776,31 +1775,16 @@ return (
 
       {/* 視圖切換 */}
       <div className="flex items-center">
-       <div className="ml-auto inline-flex items-center bg-slate-100 rounded-full p-1">
-  <button
-    onClick={() => setCompareView("table")}
-    className={`px-3 py-1 rounded-full text-xs md:text-sm
-      will-change-transform transition-[opacity,transform,background-color,box-shadow]
-      duration-150 ease-linear
-      ${compareView === "table"
-        ? "bg-white shadow-sm"
-        : "opacity-70 hover:opacity-100 active:translate-y-px"}`}
-  >
-    表格
-  </button>
-  <button
-    onClick={() => setCompareView("trend")}
-    className={`ml-1 px-3 py-1 rounded-full text-xs md:text-sm
-      will-change-transform transition-[opacity,transform,background-color,box-shadow]
-      duration-150 ease-linear
-      ${compareView === "trend"
-        ? "bg-white shadow-sm"
-        : "opacity-70 hover:opacity-100 active:translate-y-px"}`}
-  >
-    趨勢圖
-  </button>
-</div>
-
+        <div className="ml-auto flex items-center gap-1 bg-slate-100 rounded-full p-1">
+          <button
+            onClick={() => setCompareView("table")}
+            className={`px-3 py-1 rounded-full text-xs md:text-sm ${compareView === "table" ? "bg-white shadow" : "opacity-70 hover:opacity-100"}`}
+          >表格</button>
+          <button
+            onClick={() => setCompareView("trend")}
+            className={`px-3 py-1 rounded-full text-xs md:text-sm ${compareView === "trend" ? "bg-white shadow" : "opacity-70 hover:opacity-100"}`}
+          >趨勢圖</button>
+        </div>
       </div>
 
       {compareLive.length >= 2 ? (
@@ -2111,5 +2095,30 @@ const TrendTab = ({ games }: TrendTabProps) => {
         )}
       </div>
     </div>
+{pendingNew && (
+  <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center">
+    <div className="bg-white rounded-xl shadow-lg p-5 w-[min(92vw,420px)]">
+      <h3 className="text-base font-semibold mb-2">建立新比賽</h3>
+      <p className="text-sm text-slate-600 mb-4">
+        模式：{pendingNew === "classic" ? "傳統" : "逐局"}
+      </p>
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={() => setPendingNew(null)}
+          className="px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 transition-colors hover:bg-slate-50"
+        >
+          取消
+        </button>
+        <button
+          onClick={() => { addGameWithMode(pendingNew as GameMode); setPendingNew(null); }}
+          className="px-3 py-1.5 rounded-md bg-black text-white transition-colors hover:opacity-90"
+        >
+          建立
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
   );
 }
