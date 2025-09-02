@@ -1,15 +1,10 @@
 "use client";
-import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef, useMemo } from "react";
-import { supabase } from "@/lib/supabase";
-import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line } from "recharts";
 
-// Build label for UI (safe on client)
-const BUILD: string = (typeof window !== 'undefined' && (window as any).__NEXT_DATA__?.buildId) || '';
-const buildLabel: string = BUILD ? BUILD.slice(0, 7) : '';
-
-
+// ===== Hot Update with Autosave =====
+const LS_PLAYERS = "rsbm.players.v2";
+const LS_GAMES   = "rsbm.games.v2";
+const LS_BACKUP  = "rsbm.autosave.backup";
+const SS_ONCE    = "rsbm.forceReload.once";
 
 function getBuildIdFromHtml(html: string): string | null {
   const m = html.match(/"buildId"\s*:\s*"([A-Za-z0-9\-_.]+)"/);
@@ -17,69 +12,89 @@ function getBuildIdFromHtml(html: string): string | null {
 }
 
 function useHotUpdateWithAutosave(players: any, games: any) {
-  // A) 進站立即檢查「是否有新版本」，如有就先存檔再強制載入最新
+  // A) 直進系統就刷新（每個分頁只做一次，避免死循環）
   useEffect(() => {
-    const ensureLatest = async () => {
-      try {
-        const currentId =
-          (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
-        const res = await fetch(window.location.pathname || "/", { cache: "no-store" });
-        const html = await res.text();
-        const latest = getBuildIdFromHtml(html);
-        if (currentId && latest && latest !== currentId) {
-          try {
-            localStorage.setItem("rsbm.players.v2", JSON.stringify(players));
-            localStorage.setItem("rsbm.games.v2",   JSON.stringify(games));
-            localStorage.setItem("rsbm.autosave.backup", JSON.stringify({ ts: Date.now(), players, games }));
-          } catch {}
-          const url = new URL(window.location.href);
-          url.searchParams.set("_v", latest);
-          window.location.replace(url.toString());
-        }
-      } catch {}
-    };
-    void ensureLatest();
+    try {
+      if (!sessionStorage.getItem(SS_ONCE)) {
+        sessionStorage.setItem(SS_ONCE, "1");
+        location.reload();
+      }
+    } catch {}
   }, []);
 
-  // B) 使用中偵測到新版本 → 先存，再刷新到最新（帶版本參數）
+  // B) 使用中若發現有新版本：先存，再刷新
   useEffect(() => {
     let alive = true;
+    const currentId = (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
+
     const check = async () => {
       try {
-        const currentId =
-          (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
-        const res = await fetch(window.location.pathname || "/", { cache: "no-store" });
+        const res = await fetch("/", { cache: "no-store" });
         const html = await res.text();
         const latest = getBuildIdFromHtml(html);
         if (!alive) return;
         if (currentId && latest && latest !== currentId) {
+          // 先本端存檔
           try {
-            localStorage.setItem("rsbm.players.v2", JSON.stringify(players));
-            localStorage.setItem("rsbm.games.v2",   JSON.stringify(games));
-            localStorage.setItem("rsbm.autosave.backup", JSON.stringify({ ts: Date.now(), players, games }));
+            localStorage.setItem(LS_PLAYERS, JSON.stringify(players));
+            localStorage.setItem(LS_GAMES,   JSON.stringify(games));
+            localStorage.setItem(LS_BACKUP,  JSON.stringify({ ts: Date.now(), players, games }));
           } catch {}
-          const url = new URL(window.location.href);
-          url.searchParams.set("_v", latest);
-          window.location.replace(url.toString());
+
+          // 再自動刷新頁面
+          location.reload();
         }
       } catch {}
     };
+
+    // 定時檢查 + 聚焦檢查
     const tid = setInterval(check, 60000);
     const onFocus = () => check();
     const onVis = () => { if (document.visibilityState === "visible") check(); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVis);
-    const t0 = setTimeout(check, 5000);
+    // 首次也檢查一次（避免等一分鐘）
+    setTimeout(check, 5000);
+
     return () => {
       alive = false;
       clearInterval(tid);
-      clearTimeout(t0);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [players, games]);
 }
 
+
+
+// 1) 版本碼 & 版本時間（來自 next.config.mjs）
+const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
+const BUILD_AT = process.env.NEXT_PUBLIC_BUILD_AT ?? "";
+
+// 2) 轉成人類可讀（台灣時間）
+const buildLabel = (() => {
+  try {
+    if (!BUILD_AT) return "";
+    const d = new Date(BUILD_AT);
+    return new Intl.DateTimeFormat("zh-TW", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Taipei",
+    }).format(d).replace(/\//g, "-");
+  } catch { return ""; }
+})();
+import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { supabase } from "@/lib/supabase";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
+} from "recharts";
+import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 type VoidFn = () => void | Promise<void>;
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
@@ -200,7 +215,7 @@ const STORAGE = {
   compareSelH: "rsbm.compare.sel.h",
   compareSelP: "rsbm.compare.sel.p",
   compareSelF: "rsbm.compare.sel.f",
-};
+};;
 
 const toNonNegNum = (v: any) => {
   const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0;
@@ -1073,22 +1088,51 @@ const HalfStepper = ({ g }: { g: Game }) => {
 
   
 const BoxScore = () => {
+  useHotUpdateWithAutosave(players, games);
   const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
   const filteredGames = games.filter(g => modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab));
-    useHotUpdateWithAutosave(players, games);
-return (
+  return (
   <div className="space-y-4">
     <div className="flex items-center gap-2">
-      <div className="inline-flex rounded border overflow-hidden">
-  <button onClick={() => addGameWithMode("classic")} className="px-3 py-1 text-sm bg-white hover:bg-gray-50">新增（傳統）</button>
-  <button onClick={() => addGameWithMode("inning")} className="px-3 py-1 text-sm bg-white hover:bg-gray-50 border-l">新增（逐局）</button>
+     <div className="inline-flex items-center bg-slate-100 rounded-full p-1">
+  <button
+    onClick={() => addGameWithMode("classic")}
+    className="px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
+  >
+    新增（傳統）
+  </button>
+  <button
+    onClick={() => addGameWithMode("inning")}
+    className="ml-1 px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
+  >
+    新增（逐局）
+  </button>
 </div>
-<div className="ml-2 inline-flex rounded overflow-hidden border">
-  <button onClick={() => setModeTab("all")} className={"px-3 py-1 text-sm " + (modeTab==="all" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>全部</button>
-  <button onClick={() => setModeTab("classic")} className={"px-3 py-1 text-sm border-l " + (modeTab==="classic" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>傳統</button>
-  <button onClick={() => setModeTab("inning")} className={"px-3 py-1 text-sm border-l " + (modeTab==="inning" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>逐局</button>
+
+<div className="ml-2 inline-flex items-center bg-slate-100 rounded-full p-1">
+  <button
+    onClick={() => setModeTab("all")}
+    className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
+      ${modeTab === "all" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
+  >
+    全部
+  </button>
+  <button
+    onClick={() => setModeTab("classic")}
+    className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
+      ${modeTab === "classic" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
+  >
+    傳統
+  </button>
+  <button
+    onClick={() => setModeTab("inning")}
+    className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
+      ${modeTab === "inning" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
+  >
+    逐局
+  </button>
 </div>
-    </div>
+
 
     {filteredGames.map((g) => {
       let teamH = 0, teamE = 0;
