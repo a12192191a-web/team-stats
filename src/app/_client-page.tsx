@@ -602,6 +602,29 @@ const Navbar = () => (
   const clearPlayers = () => { if (confirm("確定清空所有球員？")) { setPlayers([]); setCompare([]); } };
 
   /* ---------------- 比賽：新增 / 編輯 / 鎖定 ---------------- */
+
+const addGameWithMode = (mode: GameMode) => {
+  const opponent = prompt("對手名稱") || "Unknown";
+  const date = localDateStr();
+  setGames((prev) => [...prev, {
+    id: Date.now(),
+    date,
+    opponent,
+    season: "",            // ← 新增
+    tag: "",               // ← 新增
+    startDefense: true,
+    mode,
+    lineup: [],
+    innings: Array(9).fill(0),
+    stats: {},
+    locked: false,
+    roster: {},
+    winPid: undefined,     // ← 新增
+    lossPid: undefined,    // ← 新增
+    savePid: undefined,    // ← 新增
+  }]);
+};
+
 const addGame = () => {
   const opponent = prompt("對手名稱") || "Unknown";
   const date = localDateStr();
@@ -997,13 +1020,24 @@ const HalfStepper = ({ g }: { g: Game }) => {
 };
 
   
-const BoxScore = () => (
+const BoxScore = () => {
+  const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
+  const filteredGames = games.filter(g => modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab));
+  return (
   <div className="space-y-4">
     <div className="flex items-center gap-2">
-      <button onClick={addGame} className="bg-blue-600 text-white px-3 py-1 rounded">新增比賽</button>
+      <div className="inline-flex rounded border overflow-hidden">
+  <button onClick={() => addGameWithMode("classic")} className="px-3 py-1 text-sm bg-white hover:bg-gray-50">新增（傳統）</button>
+  <button onClick={() => addGameWithMode("inning")} className="px-3 py-1 text-sm bg-white hover:bg-gray-50 border-l">新增（逐局）</button>
+</div>
+<div className="ml-2 inline-flex rounded overflow-hidden border">
+  <button onClick={() => setModeTab("all")} className={"px-3 py-1 text-sm " + (modeTab==="all" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>全部</button>
+  <button onClick={() => setModeTab("classic")} className={"px-3 py-1 text-sm border-l " + (modeTab==="classic" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>傳統</button>
+  <button onClick={() => setModeTab("inning")} className={"px-3 py-1 text-sm border-l " + (modeTab==="inning" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>逐局</button>
+</div>
     </div>
 
-    {games.map((g) => {
+    {filteredGames.map((g) => {
       let teamH = 0, teamE = 0;
       g.lineup.forEach((pid) => {
         const cur = g.stats[pid] ?? emptyTriple();
@@ -1438,6 +1472,7 @@ return (
     })}
   </div>
 );
+};
 
   /* ---------------- UI：Compare ---------------- */
   const Compare = () => {
