@@ -5,6 +5,11 @@ import { supabase } from "@/lib/supabase";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line } from "recharts";
 
+// Build label for UI (safe on client)
+const BUILD: string = (typeof window !== 'undefined' && (window as any).__NEXT_DATA__?.buildId) || '';
+const buildLabel: string = BUILD ? BUILD.slice(0, 7) : '';
+
+
 
 function getBuildIdFromHtml(html: string): string | null {
   const m = html.match(/"buildId"\s*:\s*"([A-Za-z0-9\-_.]+)"/);
