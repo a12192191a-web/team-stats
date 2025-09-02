@@ -2,8 +2,9 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import {
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line } from "recharts";
+
 
 function getBuildIdFromHtml(html: string): string | null {
   const m = html.match(/"buildId"\s*:\s*"([A-Za-z0-9\-_.]+)"/);
@@ -73,121 +74,6 @@ function useHotUpdateWithAutosave(players: any, games: any) {
     };
   }, [players, games]);
 }
-
-);
-        const html = await res.text();
-        const latest = getBuildIdFromHtml(html);
-
-        if (currentId && latest && latest !== currentId) {
-          // 先本端存檔（覆蓋現有 rsbm.*.v2，並留一份備份）
-          try {
-            localStorage.setItem("rsbm.players.v2", JSON.stringify(players));
-            localStorage.setItem("rsbm.games.v2",   JSON.stringify(games));
-            localStorage.setItem(
-              "rsbm.autosave.backup",
-              JSON.stringify({ ts: Date.now(), players, games })
-            );
-          } catch {}
-
-          // 用版本參數強制換到最新，避開 CDN/瀏覽器快取
-          const url = new URL(window.location.href);
-          url.searchParams.set("_v", latest);
-          window.location.replace(url.toString());
-        }
-        // 若 current == latest，就什麼都不做（避免無限重整）
-      } catch {
-        // 靜默忽略網路/解析錯誤
-      }
-    };
-
-    void ensureLatest();
-  }, []); // ← 不要綁 players/games，避免資料變動時重跑
-
-  // B) 使用中偵測到新版本 → 先存，再刷新到最新（帶版本參數）
-  useEffect(() => {
-    let alive = true;
-
-    const check = async () => {
-      try {
-        const currentId =
-          (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
-
-        const res = await fetch(window.location.pathname || "/", { cache: "no-store" });
-        const html = await res.text();
-        const latest = getBuildIdFromHtml(html);
-        if (!alive) return;
-
-        if (currentId && latest && latest !== currentId) {
-          try {
-            localStorage.setItem("rsbm.players.v2", JSON.stringify(players));
-            localStorage.setItem("rsbm.games.v2",   JSON.stringify(games));
-            localStorage.setItem(
-              "rsbm.autosave.backup",
-              JSON.stringify({ ts: Date.now(), players, games })
-            );
-          } catch {}
-
-          const url = new URL(window.location.href);
-          url.searchParams.set("_v", latest);
-          window.location.replace(url.toString());
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    // 進使用期：每 60s 檢查一次、回前景或聚焦時也檢查
-    const tid = setInterval(check, 60000);
-    const onFocus = () => check();
-    const onVis = () => {
-      if (document.visibilityState === "visible") check();
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVis);
-
-    // 初次載入延遲 5 秒再檢查一次（避免等一分鐘）
-    const t0 = setTimeout(check, 5000);
-
-    return () => {
-      alive = false;
-      clearInterval(tid);
-      clearTimeout(t0);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, [players, games]);
-}
-}
-
-
-
-// 1) 版本碼 & 版本時間（來自 next.config.mjs）
-const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
-const BUILD_AT = process.env.NEXT_PUBLIC_BUILD_AT ?? "";
-
-// 2) 轉成人類可讀（台灣時間）
-const buildLabel = (() => {
-  try {
-    if (!BUILD_AT) return "";
-    const d = new Date(BUILD_AT);
-    return new Intl.DateTimeFormat("zh-TW", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-      timeZone: "Asia/Taipei",
-    }).format(d).replace(/\//g, "-");
-  } catch { return ""; }
-})();
-
-
-
-
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
-} from "recharts";
 
 type VoidFn = () => void | Promise<void>;
 
