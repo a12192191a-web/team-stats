@@ -1,5 +1,32 @@
 "use client";
 
+// -------- Auto Update Settings --------
+const AUTO_UPDATE_KEY = "rsbm.autoUpdate";
+function getAutoUpdatePref(): boolean {
+  if (typeof window === "undefined") return false;
+  const v = localStorage.getItem(AUTO_UPDATE_KEY);
+  return v === "1";
+}
+function setAutoUpdatePref(on: boolean) {
+  try { localStorage.setItem(AUTO_UPDATE_KEY, on ? "1" : "0"); } catch {}
+}
+function useAutoUpdate(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+    // 為避免無限重整：每個 Tab 只在首次載入時重整一次
+    try {
+      const key = "rsbm.autoUpdate.once";
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        // 稍等一下讓頁面完成 hydration 再重整
+        setTimeout(() => { try { location.reload(); } catch {} }, 200);
+      }
+    } catch {}
+  }, [enabled]);
+}
+
+
+
 // 1) 版本碼 & 版本時間（來自 next.config.mjs）
 const BUILD = process.env.NEXT_PUBLIC_BUILD ?? "";
 const BUILD_AT = process.env.NEXT_PUBLIC_BUILD_AT ?? "";
@@ -31,7 +58,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 type VoidFn = () => void | Promise<void>;
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
-function useFloatingCheckUpdateButton(onClick?: VoidFn) {
+function useFloatingCheckUpdateButton_DISABLED(onClick?: VoidFn) {
   const router = useRouter();
   useEffect(() => {
     const id = "check-update-float-btn";
@@ -1021,6 +1048,10 @@ const HalfStepper = ({ g }: { g: Game }) => {
 
   
 const BoxScore = () => {
+  const [autoUpdate, setAutoUpdate] = useState<boolean>(getAutoUpdatePref());
+  useEffect(() => setAutoUpdatePref(autoUpdate), [autoUpdate]);
+  useAutoUpdate(autoUpdate);
+
   const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
   const filteredGames = games.filter(g => modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab));
   return (
@@ -1034,6 +1065,12 @@ const BoxScore = () => {
   <button onClick={() => setModeTab("all")} className={"px-3 py-1 text-sm " + (modeTab==="all" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>全部</button>
   <button onClick={() => setModeTab("classic")} className={"px-3 py-1 text-sm border-l " + (modeTab==="classic" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>傳統</button>
   <button onClick={() => setModeTab("inning")} className={"px-3 py-1 text-sm border-l " + (modeTab==="inning" ? "bg-gray-800 text-white" : "bg-white hover:bg-gray-50")}>逐局</button>
+</div>
+<div className="ml-3 inline-flex items-center gap-2 text-sm">
+  <label className="inline-flex items-center gap-1">
+    <input type="checkbox" checked={autoUpdate} onChange={(e)=>setAutoUpdate(e.target.checked)} />
+    自動更新
+  </label>
 </div>
     </div>
 
