@@ -212,7 +212,7 @@ function reviveGames(raw: any): Game[] {
   lossPid: Number(g?.lossPid) || undefined, // ← 新增
   savePid: Number(g?.savePid) || undefined, // ← 新增
   startDefense: (g?.startDefense ?? true) ? true : false,
-  mode: (g?.mode === \"inning\" ? \"inning\" : \"classic\"),
+  mode: (g?.mode === "inning" ? "inning" : "classic"),
 };
 
   });
