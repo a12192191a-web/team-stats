@@ -1,10 +1,9 @@
 "use client";
-
-// ===== Hot Update with Autosave =====
-const LS_PLAYERS = "rsbm.players.v2";
-const LS_GAMES   = "rsbm.games.v2";
-const LS_BACKUP  = "rsbm.autosave.backup";
-const SS_ONCE    = "rsbm.forceReload.once";
+import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { supabase } from "@/lib/supabase";
+import {
+import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 
 function getBuildIdFromHtml(html: string): string | null {
   const m = html.match(/"buildId"\s*:\s*"([A-Za-z0-9\-_.]+)"/);
@@ -12,57 +11,152 @@ function getBuildIdFromHtml(html: string): string | null {
 }
 
 function useHotUpdateWithAutosave(players: any, games: any) {
-  // A) 直進系統就刷新（每個分頁只做一次，避免死循環）
+  // A) 進站立即檢查「是否有新版本」，如有就先存檔再強制載入最新
   useEffect(() => {
-    try {
-      if (!sessionStorage.getItem(SS_ONCE)) {
-        sessionStorage.setItem(SS_ONCE, "1");
-        location.reload();
-      }
-    } catch {}
+    const ensureLatest = async () => {
+      try {
+        const currentId =
+          (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
+        const res = await fetch(window.location.pathname || "/", { cache: "no-store" });
+        const html = await res.text();
+        const latest = getBuildIdFromHtml(html);
+        if (currentId && latest && latest !== currentId) {
+          try {
+            localStorage.setItem("rsbm.players.v2", JSON.stringify(players));
+            localStorage.setItem("rsbm.games.v2",   JSON.stringify(games));
+            localStorage.setItem("rsbm.autosave.backup", JSON.stringify({ ts: Date.now(), players, games }));
+          } catch {}
+          const url = new URL(window.location.href);
+          url.searchParams.set("_v", latest);
+          window.location.replace(url.toString());
+        }
+      } catch {}
+    };
+    void ensureLatest();
   }, []);
 
-  // B) 使用中若發現有新版本：先存，再刷新
+  // B) 使用中偵測到新版本 → 先存，再刷新到最新（帶版本參數）
   useEffect(() => {
     let alive = true;
-    const currentId = (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
-
     const check = async () => {
       try {
-        const res = await fetch("/", { cache: "no-store" });
+        const currentId =
+          (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
+        const res = await fetch(window.location.pathname || "/", { cache: "no-store" });
         const html = await res.text();
         const latest = getBuildIdFromHtml(html);
         if (!alive) return;
         if (currentId && latest && latest !== currentId) {
-          // 先本端存檔
           try {
-            localStorage.setItem(LS_PLAYERS, JSON.stringify(players));
-            localStorage.setItem(LS_GAMES,   JSON.stringify(games));
-            localStorage.setItem(LS_BACKUP,  JSON.stringify({ ts: Date.now(), players, games }));
+            localStorage.setItem("rsbm.players.v2", JSON.stringify(players));
+            localStorage.setItem("rsbm.games.v2",   JSON.stringify(games));
+            localStorage.setItem("rsbm.autosave.backup", JSON.stringify({ ts: Date.now(), players, games }));
           } catch {}
-
-          // 再自動刷新頁面
-          location.reload();
+          const url = new URL(window.location.href);
+          url.searchParams.set("_v", latest);
+          window.location.replace(url.toString());
         }
       } catch {}
     };
-
-    // 定時檢查 + 聚焦檢查
     const tid = setInterval(check, 60000);
     const onFocus = () => check();
     const onVis = () => { if (document.visibilityState === "visible") check(); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVis);
-    // 首次也檢查一次（避免等一分鐘）
-    setTimeout(check, 5000);
-
+    const t0 = setTimeout(check, 5000);
     return () => {
       alive = false;
       clearInterval(tid);
+      clearTimeout(t0);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [players, games]);
+}
+
+);
+        const html = await res.text();
+        const latest = getBuildIdFromHtml(html);
+
+        if (currentId && latest && latest !== currentId) {
+          // 先本端存檔（覆蓋現有 rsbm.*.v2，並留一份備份）
+          try {
+            localStorage.setItem("rsbm.players.v2", JSON.stringify(players));
+            localStorage.setItem("rsbm.games.v2",   JSON.stringify(games));
+            localStorage.setItem(
+              "rsbm.autosave.backup",
+              JSON.stringify({ ts: Date.now(), players, games })
+            );
+          } catch {}
+
+          // 用版本參數強制換到最新，避開 CDN/瀏覽器快取
+          const url = new URL(window.location.href);
+          url.searchParams.set("_v", latest);
+          window.location.replace(url.toString());
+        }
+        // 若 current == latest，就什麼都不做（避免無限重整）
+      } catch {
+        // 靜默忽略網路/解析錯誤
+      }
+    };
+
+    void ensureLatest();
+  }, []); // ← 不要綁 players/games，避免資料變動時重跑
+
+  // B) 使用中偵測到新版本 → 先存，再刷新到最新（帶版本參數）
+  useEffect(() => {
+    let alive = true;
+
+    const check = async () => {
+      try {
+        const currentId =
+          (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
+
+        const res = await fetch(window.location.pathname || "/", { cache: "no-store" });
+        const html = await res.text();
+        const latest = getBuildIdFromHtml(html);
+        if (!alive) return;
+
+        if (currentId && latest && latest !== currentId) {
+          try {
+            localStorage.setItem("rsbm.players.v2", JSON.stringify(players));
+            localStorage.setItem("rsbm.games.v2",   JSON.stringify(games));
+            localStorage.setItem(
+              "rsbm.autosave.backup",
+              JSON.stringify({ ts: Date.now(), players, games })
+            );
+          } catch {}
+
+          const url = new URL(window.location.href);
+          url.searchParams.set("_v", latest);
+          window.location.replace(url.toString());
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    // 進使用期：每 60s 檢查一次、回前景或聚焦時也檢查
+    const tid = setInterval(check, 60000);
+    const onFocus = () => check();
+    const onVis = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+
+    // 初次載入延遲 5 秒再檢查一次（避免等一分鐘）
+    const t0 = setTimeout(check, 5000);
+
+    return () => {
+      alive = false;
+      clearInterval(tid);
+      clearTimeout(t0);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [players, games]);
+}
 }
 
 
@@ -87,14 +181,14 @@ const buildLabel = (() => {
     }).format(d).replace(/\//g, "-");
   } catch { return ""; }
 })();
-import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef, useMemo } from "react";
-import { supabase } from "@/lib/supabase";
-import {
+
+
+
+
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
-import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+
 type VoidFn = () => void | Promise<void>;
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
@@ -215,7 +309,7 @@ const STORAGE = {
   compareSelH: "rsbm.compare.sel.h",
   compareSelP: "rsbm.compare.sel.p",
   compareSelF: "rsbm.compare.sel.f",
-};;
+};
 
 const toNonNegNum = (v: any) => {
   const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0;
@@ -1088,10 +1182,10 @@ const HalfStepper = ({ g }: { g: Game }) => {
 
   
 const BoxScore = () => {
-  useHotUpdateWithAutosave(players, games);
   const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
   const filteredGames = games.filter(g => modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab));
-  return (
+    useHotUpdateWithAutosave(players, games);
+return (
   <div className="space-y-4">
     <div className="flex items-center gap-2">
       <div className="inline-flex rounded border overflow-hidden">
