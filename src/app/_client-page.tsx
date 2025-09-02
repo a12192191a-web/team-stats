@@ -1090,48 +1090,53 @@ const HalfStepper = ({ g }: { g: Game }) => {
 const BoxScore = () => {
   useHotUpdateWithAutosave(players, games);
   const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
-  const filteredGames = games.filter(g => modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab));
-  return (
-  <div className="space-y-4">
-    <div className="flex items-center gap-2">
-     <div className="inline-flex items-center bg-slate-100 rounded-full p-1">
-  <button
-    onClick={() => addGameWithMode("classic")}
-    className="px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
-  >
-    新增（傳統）
-  </button>
-  <button
-    onClick={() => addGameWithMode("inning")}
-    className="ml-1 px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
-  >
-    新增（逐局）
-  </button>
-</div>
+  const filteredGames = games.filter(g =>
+    modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab)
+  );
 
-<div className="ml-2 inline-flex items-center bg-slate-100 rounded-full p-1">
-  <button
-    onClick={() => setModeTab("all")}
-    className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
-      ${modeTab === "all" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
-  >
-    全部
-  </button>
-  <button
-    onClick={() => setModeTab("classic")}
-    className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
-      ${modeTab === "classic" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
-  >
-    傳統
-  </button>
-  <button
-    onClick={() => setModeTab("inning")}
-    className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
-      ${modeTab === "inning" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
-  >
-    逐局
-  </button>
-</div>
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <div className="inline-flex items-center bg-slate-100 rounded-full p-1">
+          <button
+            onClick={() => addGameWithMode("classic")}
+            className="px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
+          >
+            新增（傳統）
+          </button>
+          <button
+            onClick={() => addGameWithMode("inning")}
+            className="ml-1 px-3 py-1 rounded-full text-xs md:text-sm bg-white transition-all duration-200 hover:opacity-90 active:scale-95"
+          >
+            新增（逐局）
+          </button>
+        </div>
+
+        <div className="ml-2 inline-flex items-center bg-slate-100 rounded-full p-1">
+          <button
+            onClick={() => setModeTab("all")}
+            className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
+              ${modeTab === "all" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
+          >
+            全部
+          </button>
+          <button
+            onClick={() => setModeTab("classic")}
+            className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
+              ${modeTab === "classic" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
+          >
+            傳統
+          </button>
+          <button
+            onClick={() => setModeTab("inning")}
+            className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
+              ${modeTab === "inning" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
+          >
+            逐局
+          </button>
+        </div>
+      </div> 
+
 
 
     {filteredGames.map((g) => {
