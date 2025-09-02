@@ -1112,29 +1112,26 @@ const BoxScore = () => {
           </button>
         </div>
 
-        <div className="ml-2 inline-flex items-center bg-slate-100 rounded-full p-1">
-          <button
-            onClick={() => setModeTab("all")}
-            className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
-              ${modeTab === "all" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
-          >
-            全部
-          </button>
-          <button
-            onClick={() => setModeTab("classic")}
-            className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
-              ${modeTab === "classic" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
-          >
-            傳統
-          </button>
-          <button
-            onClick={() => setModeTab("inning")}
-            className={`px-3 py-1 rounded-full text-xs md:text-sm transition-all duration-200
-              ${modeTab === "inning" ? "bg-white shadow scale-100" : "opacity-70 hover:opacity-100 active:scale-95"}`}
-          >
-            逐局
-          </button>
-        </div>
+<div className="ml-2 inline-flex items-center bg-slate-100 rounded-full p-1">
+  {[
+    { key: "all",     label: "全部" },
+    { key: "classic", label: "傳統" },
+    { key: "inning",  label: "逐局" },
+  ].map(({ key, label }) => (
+    <button
+      key={key}
+      onClick={() => setModeTab(key as any)}
+      className={`px-3 py-1 rounded-full text-xs md:text-sm
+        will-change-transform transition-[opacity,transform,background-color,box-shadow]
+        duration-150 ease-linear
+        ${modeTab === key
+          ? "bg-white shadow-sm"
+          : "opacity-70 hover:opacity-100 active:translate-y-px"}`}
+    >
+      {label}
+    </button>
+  ))}
+</div>
       </div> 
 
 
@@ -1779,16 +1776,31 @@ return (
 
       {/* 視圖切換 */}
       <div className="flex items-center">
-        <div className="ml-auto flex items-center gap-1 bg-slate-100 rounded-full p-1">
-          <button
-            onClick={() => setCompareView("table")}
-            className={`px-3 py-1 rounded-full text-xs md:text-sm ${compareView === "table" ? "bg-white shadow" : "opacity-70 hover:opacity-100"}`}
-          >表格</button>
-          <button
-            onClick={() => setCompareView("trend")}
-            className={`px-3 py-1 rounded-full text-xs md:text-sm ${compareView === "trend" ? "bg-white shadow" : "opacity-70 hover:opacity-100"}`}
-          >趨勢圖</button>
-        </div>
+       <div className="ml-auto inline-flex items-center bg-slate-100 rounded-full p-1">
+  <button
+    onClick={() => setCompareView("table")}
+    className={`px-3 py-1 rounded-full text-xs md:text-sm
+      will-change-transform transition-[opacity,transform,background-color,box-shadow]
+      duration-150 ease-linear
+      ${compareView === "table"
+        ? "bg-white shadow-sm"
+        : "opacity-70 hover:opacity-100 active:translate-y-px"}`}
+  >
+    表格
+  </button>
+  <button
+    onClick={() => setCompareView("trend")}
+    className={`ml-1 px-3 py-1 rounded-full text-xs md:text-sm
+      will-change-transform transition-[opacity,transform,background-color,box-shadow]
+      duration-150 ease-linear
+      ${compareView === "trend"
+        ? "bg-white shadow-sm"
+        : "opacity-70 hover:opacity-100 active:translate-y-px"}`}
+  >
+    趨勢圖
+  </button>
+</div>
+
       </div>
 
       {compareLive.length >= 2 ? (
