@@ -215,7 +215,7 @@ const STORAGE = {
   compareSelH: "rsbm.compare.sel.h",
   compareSelP: "rsbm.compare.sel.p",
   compareSelF: "rsbm.compare.sel.f",
-};;
+};
 
 const toNonNegNum = (v: any) => {
   const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0;
