@@ -285,7 +285,13 @@ function reviveGames(raw: any): Game[] {
   winPid: Number(g?.winPid) || undefined,   // ← 新增
   lossPid: Number(g?.lossPid) || undefined, // ← 新增
   savePid: Number(g?.savePid) || undefined, // ← 新增
-  defense: Array.from({ length: 9 }, () => Array(9).fill(0)),
+  defense: (Array.isArray(g?.defense)
+  ? g.defense.map((row: any) => (
+      Array.isArray(row)
+        ? row.map((n: any) => Number(n) || 0).slice(0, 9).concat(Array(Math.max(0, 9 - (row.length||0))).fill(0)).slice(0,9)
+        : Array(9).fill(0)
+    ))
+  : Array.from({ length: 9 }, () => Array(9).fill(0))),
   startDefense: (g?.startDefense ?? true) ? true : false,
   mode: (g?.mode === "inning" ? "inning" : "classic"),
 };
@@ -1208,6 +1214,16 @@ const HalfStepper = ({ g }: { g: Game }) => {
   const [balls, setBalls] = useState(0);     // per-PA
   const [strikes, setStrikes] = useState(0); // per-PA
   const [curBatterPid, setCurBatterPid] = useState<number | ''>(g.lineup[0] ?? '');
+  // 目前打序索引（自動輪到下一棒；僅在攻擊半局進位）
+  const [batIdx, setBatIdx] = useState(0);
+  useEffect(() => {
+    if (!Array.isArray(g.lineup) || g.lineup.length === 0) { setCurBatterPid(''); return; }
+    if (batIdx >= g.lineup.length) setBatIdx(0);
+    const pid = g.lineup[batIdx] ?? '';
+    setCurBatterPid(pid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [g.lineup.join(','), batIdx]);
+
 
   // 讀/寫目前比賽局部統計
   const getStatLocal = (pid: number, section: keyof Triple, key: string) => {
@@ -1253,30 +1269,43 @@ const HalfStepper = ({ g }: { g: Game }) => {
     }
   };
 
-  const endPA = () => { setBalls(0); setStrikes(0); };
+  const endPA = () => { setBalls(0); setStrikes(0); if (offense && g.lineup.length) setBatIdx(i => (i + 1) % g.lineup.length); };
 
   const prev = () => setStep(s => Math.max(0, s - 1));
   const next = () => setStep(s => Math.min(9*2 - 1, s + 1));
 
   // ---- 事件：打者結果（攻擊用） ----
   const hit = (bases: 1|2|3|4) => {
-    if (!curBatterPid) return;
-    const pid = Number(curBatterPid);
-    addStatLocal(pid, "batting", bases === 1 ? "1B" : bases === 2 ? "2B" : bases === 3 ? "3B" : "HR", 1);
-    addStatLocal(pid, "batting", "AB", 1);
-    endPA();
-  };
+  if (!curBatterPid) return;
+  const pid = Number(curBatterPid);
+  addStatLocal(pid, "batting", bases === 1 ? "1B" : bases === 2 ? "2B" : bases === 3 ? "3B" : "HR", 1);
+  // 投手自動統計（被安打、被全壘打、對手的 AB）
+  if (pitcherPid) {
+    const ppid = Number(pitcherPid);
+    addStatLocal(ppid, "pitching", "H", 1);
+    if (bases === 4) addStatLocal(ppid, "pitching", "HR", 1);
+    addStatLocal(ppid, "pitching", "AB", 1);
+  }
+  endPA();
+};
   const outBy = (kind: "GO"|"FO"|"SO"|"SF"|"SH") => {
-    if (!curBatterPid) return;
-    const pid = Number(curBatterPid);
-    if (kind === "SF" || kind === "SH") addStatLocal(pid, "batting", kind, 1);
-    else {
-      addStatLocal(pid, "batting", kind, 1);
-      addStatLocal(pid, "batting", "AB", 1);
+  if (!curBatterPid) return;
+  const pid = Number(curBatterPid);
+  if (kind === "SF" || kind === "SH") {
+    addStatLocal(pid, "batting", kind, 1);
+    // 投手：犧牲打/飛不計入對手 AB
+  } else {
+    addStatLocal(pid, "batting", kind, 1);
+    // 投手：凡是出局（含三振）都計入對手 AB；三振另計 K
+    if (pitcherPid) {
+      const ppid = Number(pitcherPid);
+      addStatLocal(ppid, "pitching", "AB", 1);
+      if (kind === "SO") addStatLocal(ppid, "pitching", "K", 1);
     }
-    commitOuts(1);
-    endPA();
-  };
+  }
+  commitOuts(1);
+  endPA();
+};
   const walkLike = (kind: "BB"|"HBP") => {
     if (!curBatterPid) return;
     const pid = Number(curBatterPid);
