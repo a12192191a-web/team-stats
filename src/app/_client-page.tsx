@@ -5,6 +5,7 @@ const LS_PLAYERS = "rsbm.players.v2";
 const LS_GAMES   = "rsbm.games.v2";
 const LS_BACKUP  = "rsbm.autosave.backup";
 const SS_ONCE    = "rsbm.forceReload.once";
+const LS_TEMPLATES = "rsbm.lineup.templates.v1";
 
 function getBuildIdFromHtml(html: string): string | null {
   const m = html.match(/"buildId"\s*:\s*"([A-Za-z0-9\-_.]+)"/);
@@ -182,6 +183,10 @@ type RosterSnapshot = Record<number, { name: string; positions: string[] }>;
 
 type GameMode = "classic" | "inning";
 
+type DefenseGrid = number[][]; // [inning][pos] -> pid (0=空)
+
+type LineupTemplate = { id: number; name: string; lineup: number[] };
+
 
 type Game = {
   id: number;
@@ -199,6 +204,7 @@ type Game = {
   savePid?: number;  // ← 新增
   startDefense?: boolean;  // 逐局模式專用：true=先守，false=先攻
   mode?: GameMode;         // 記錄方式：classic=傳統、inning=逐局
+  defense?: DefenseGrid;
 };
 
 
@@ -278,6 +284,7 @@ function reviveGames(raw: any): Game[] {
   winPid: Number(g?.winPid) || undefined,   // ← 新增
   lossPid: Number(g?.lossPid) || undefined, // ← 新增
   savePid: Number(g?.savePid) || undefined, // ← 新增
+  defense: Array.from({ length: 9 }, () => Array(9).fill(0)),
   startDefense: (g?.startDefense ?? true) ? true : false,
   mode: (g?.mode === "inning" ? "inning" : "classic"),
 };
@@ -501,7 +508,8 @@ useFloatingCheckUpdateButton(hardRefresh);
 
 
   const [topTab, setTopTab] = useState<"players" | "features">("players");
-  const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend">("box");
+  const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend" | "rank">("box");
+  const [templates, setTemplates] = useState<LineupTemplate[]>([]);
   // (removed unused textDraft/getTextDraft/setDraft/commitDraft)// SSR/CSR 一致：初值一律空；掛載後再載入
   const [players, setPlayers] = useState<Player[]>([]);
   const [games,   setGames]   = useState<Game[]>([]);
@@ -637,6 +645,11 @@ const Navbar = () => (
       >球員對比</button>
 
       <button
+        onClick={() => { setTopTab("features"); setSubTab("rank"); }}
+        className={`${BTN} ${topTab === "features" && subTab === "rank" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
+      >排行/徽章</button>
+
+      <button
         onClick={() => { setTopTab("features"); setSubTab("export"); }}
         className={`${BTN} ${topTab === "features" && subTab === "export" ? "bg-white text-[#08213A]" : "bg-white/10 hover:bg-white/20"}`}
       >匯出</button>
@@ -670,74 +683,51 @@ const Navbar = () => (
 
   /* ---------------- 比賽：新增 / 編輯 / 鎖定 ---------------- */
 
-// 乾淨的對手名稱輸入（取消 or 空白 → 不新增）
-function askOpponent(): string | null {
-  const raw = prompt("對手名稱（按『取消』不新增）");
-  if (raw === null) return null;                // 使用者按取消
-  const name = raw.trim();
-  if (!name) return null;                       // 空字串也視為取消
-  return name;
-}
-
 const addGameWithMode = (mode: GameMode) => {
-  const opponent = askOpponent();
-  if (opponent === null) {
-    alert("已取消新增比賽。");
-    return;
-  }
+  const opponent = prompt("對手名稱") || "Unknown";
   const date = localDateStr();
-  setGames((prev) => [
-    ...prev,
-    {
-      id: Date.now(),
-      date,
-      opponent,
-      season: "",
-      tag: "",
-      startDefense: true,
-      mode,
-      lineup: [],
-      innings: Array(9).fill(0),
-      stats: {},
-      locked: false,
-      roster: {},
-      winPid: undefined,
-      lossPid: undefined,
-      savePid: undefined,
-    },
-  ]);
+  setGames((prev) => [...prev, {
+    id: Date.now(),
+    date,
+    opponent,
+    season: "",            // ← 新增
+    tag: "",               // ← 新增
+    startDefense: true,
+    mode,
+    lineup: [],
+    innings: Array(9).fill(0),
+    stats: {},
+    locked: false,
+    roster: {},
+    winPid: undefined,     // ← 新增
+    lossPid: undefined,    // ← 新增
+    savePid: undefined,    // ← 新增
+  }]);
 };
 
 const addGame = () => {
-  const opponent = askOpponent();
-  if (opponent === null) {
-    alert("已取消新增比賽。");
-    return;
-  }
+  const opponent = prompt("對手名稱") || "Unknown";
   const date = localDateStr();
   const useInning = confirm("這場要用【逐局紀錄】嗎？\n按『確定』逐局／『取消』傳統");
-  setGames((prev) => [
-    ...prev,
-    {
-      id: Date.now(),
-      date,
-      opponent,
-      season: "",
-      tag: "",
-      startDefense: true,
-      mode: useInning ? "inning" : "classic",
-      lineup: [],
-      innings: Array(9).fill(0),
-      stats: {},
-      locked: false,
-      roster: {},
-      winPid: undefined,
-      lossPid: undefined,
-      savePid: undefined,
-    },
-  ]);
-};
+  setGames((prev) => [...prev, {
+  id: Date.now(),
+  date,
+  opponent,
+  season: "",            // ← 新增
+  tag: "",               // ← 新增
+  startDefense: true,
+  mode: useInning ? "inning" as const : "classic" as const,
+  lineup: [],
+  innings: Array(9).fill(0),
+  stats: {},
+  locked: false,
+  roster: {},
+  winPid: undefined,     // ← 新增
+  lossPid: undefined,    // ← 新增
+  savePid: undefined,    // ← 新增
+}]);
 
+};
 
   const lockGame = (gid: number) => {
     // (draft removed)
@@ -829,6 +819,63 @@ const addGame = () => {
       arr.splice(result.destination!.index, 0, removed);
       return { ...x, lineup: arr.slice(0, 9) };
     }));
+  };
+
+
+  /* ---------------- 打線模板 / 複製上一場 ---------------- */
+  const saveTemplateFromGame = (g: Game) => {
+    if (!g.lineup?.length) return alert("這場沒有打線可以儲存。");
+    const nameRaw = prompt("模板名稱？（例如：黑金先發）");
+    if (nameRaw === null) return;
+    const name = nameRaw.trim();
+    if (!name) return alert("名稱不可空白。");
+    const tpl: LineupTemplate = { id: Date.now(), name, lineup: [...g.lineup] };
+    setTemplates(prev => [tpl, ...prev]);
+  };
+  const applyTemplateToGame = (g: Game, tid: number) => {
+    const tpl = templates.find(t => t.id === tid);
+    if (!tpl) return;
+    const valid = tpl.lineup.filter(pid => players.some(p => p.id === pid)).slice(0, 9);
+    setGames(prev => prev.map(x => x.id === g.id ? { ...x, lineup: valid, stats: { ...x.stats, ...Object.fromEntries(valid.map(pid => [pid, x.stats[pid] ?? emptyTriple()])) } } : x));
+  };
+  const copyLastLineupToGame = (g: Game) => {
+    const others = games.filter(x => x.id !== g.id && x.lineup?.length);
+    if (!others.length) return alert("找不到上一場有打線的比賽。");
+    const last = [...others].sort((a,b) => (b.date||"").localeCompare(a.date||"") || b.id - a.id)[0];
+    const valid = last.lineup.filter(pid => players.some(p => p.id === pid)).slice(0, 9);
+    setGames(prev => prev.map(x => x.id === g.id ? { ...x, lineup: valid, stats: { ...x.stats, ...Object.fromEntries(valid.map(pid => [pid, x.stats[pid] ?? emptyTriple()])) } } : x));
+  };
+
+  /* ---------------- 守備 9×9 ---------------- */
+  const setDefense = (gid: number, inningIdx: number, posIdx: number, pid: number) => {
+    setGames(prev => prev.map(g => {
+      if (g.id !== gid) return g;
+      const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
+      if (!grid[inningIdx]) grid[inningIdx] = Array(9).fill(0);
+      grid[inningIdx][posIdx] = pid || 0;
+      return { ...g, defense: grid };
+    }));
+  };
+  const copyDefenseRow = (gid: number, inningIdx: number) => {
+    setGames(prev => prev.map(g => {
+      if (g.id !== gid || inningIdx <= 0) return g;
+      const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
+      grid[inningIdx] = [...grid[inningIdx - 1]];
+      return { ...g, defense: grid };
+    }));
+  };
+  const clearDefenseRow = (gid: number, idx: number) => {
+    setGames(prev => prev.map(g => g.id === gid ? { ...g, defense: (g.defense||Array.from({ length: 9 }, () => Array(9).fill(0))).map((row,i)=> i===idx? Array(9).fill(0): row) } : g));
+  };
+  const clearDefenseAll = (gid: number) => {
+    setGames(prev => prev.map(g => g.id === gid ? { ...g, defense: Array.from({ length: 9 }, () => Array(9).fill(0)) } : g));
+  };
+  const pidToName = (g: Game, pid: number) => {
+    if (!pid) return "";
+    const p = players.find(x => x.id === pid);
+    if (p) return p.name;
+    const snap = g.roster?.[pid];
+    return snap ? snap.name : `#${pid}`;
   };
 
   /* ---------------- 生涯同步 ---------------- */
@@ -975,7 +1022,140 @@ const addGame = () => {
     </div>
   );
 
-  /* ---------------- UI：比賽紀錄  BoxScore---------------- */
+  
+  /* ---------------- 排行 / 徽章 ---------------- */
+  const RankingsAndBadges = () => {
+    const allGames = games.slice();
+    const months = Array.from(new Set(allGames.map(g => String(g.date||"").slice(0,7)).filter(Boolean))).sort().reverse();
+    const seasons = Array.from(new Set(allGames.map(g => g.season || "").filter(Boolean))).sort();
+
+    const [month, setMonth] = useState<string>("");
+    const [season, setSeason] = useState<string>("");
+
+    const filtered = allGames.filter(g => (!month || String(g.date||"").startsWith(month)) && (!season || g.season === season));
+
+    const totals = new Map<number, Triple>();
+    filtered.forEach(g => {
+      g.lineup.forEach(pid => {
+        const cur = g.stats[pid] ?? emptyTriple();
+        const agg = totals.get(pid) ?? emptyTriple();
+        const b = { ...agg.batting }, p = { ...agg.pitching }, f = { ...agg.fielding }, br = { ...agg.baserunning };
+        Object.keys(b).forEach(k => (b as any)[k] += toNonNegNum((cur.batting as any)[k]));
+        Object.keys(p).forEach(k => (p as any)[k] += toNonNegNum((cur.pitching as any)[k]));
+        Object.keys(f).forEach(k => (f as any)[k] += toNonNegNum((cur.fielding as any)[k]));
+        Object.keys(br).forEach(k => (br as any)[k] += toNonNegNum((cur.baserunning as any)[k]));
+        totals.set(pid, { batting: b, pitching: p, fielding: f, baserunning: br });
+      });
+    });
+
+    const nameOf = (pid: number) => {
+      const p = players.find(x => x.id === pid);
+      return p ? p.name : `#${pid}`;
+    };
+
+    const hitters = Array.from(totals.entries()).map(([pid, t]) => {
+      const s = calcStats(t.batting, t.pitching, t.fielding, t.baserunning);
+      return { pid, name: nameOf(pid), AB: s.AB, OPS: s.OPS, AVG: s.AVG };
+    }).filter(x => x.AB >= 10).sort((a,b) => Number(b.OPS) - Number(a.OPS)).slice(0,5);
+
+    const pitchers = Array.from(totals.entries()).map(([pid, t]) => {
+      const s = calcStats(t.batting, t.pitching, t.fielding, t.baserunning);
+      const ip = ipToInnings(Number(t.pitching.IP));
+      return { pid, name: nameOf(pid), IP: ip, ERA: s.ERA, WHIP: s.WHIP };
+    }).filter(x => x.IP >= 5).sort((a,b) => Number(a.ERA) - Number(b.ERA)).slice(0,5);
+
+    // Badges
+    const onBaseStreak = new Set<number>();
+    const errorless = new Set<number>();
+    players.forEach(p => {
+      const seq = allGames.filter(g => g.stats[p.id]).sort((a,b) => (a.date||"").localeCompare(b.date||""));
+      let s1=0,s2=0; let b1=false,b2=false;
+      seq.forEach(g => {
+        const t = g.stats[p.id] ?? emptyTriple();
+        const st = calcStats(t.batting, t.pitching, t.fielding, t.baserunning);
+        const onBase = Number(st.TOB) > 0;
+        s1 = onBase ? s1+1 : 0;
+        if (s1>=5) b1=true;
+        const E = toNonNegNum(t.fielding.E);
+        s2 = E===0 ? s2+1 : 0;
+        if (s2>=3) b2=true;
+      });
+      if (b1) onBaseStreak.add(p.id);
+      if (b2) errorless.add(p.id);
+    });
+
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <select className="border rounded px-2 py-1" value={month} onChange={e => setMonth(e.target.value)}>
+            <option value="">月份：全部</option>
+            {months.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <select className="border rounded px-2 py-1" value={season} onChange={e => setSeason(e.target.value)}>
+            <option value="">季別：全部</option>
+            {seasons.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="border rounded p-3 bg-white">
+            <div className="font-semibold mb-2">Top 5 打者（OPS，AB≥10）</div>
+            <table className="w-full text-sm border">
+              <thead><tr><th className="border px-2 py-1">#</th><th className="border px-2 py-1">球員</th><th className="border px-2 py-1 text-right">AB</th><th className="border px-2 py-1 text-right">OPS</th><th className="border px-2 py-1 text-right">AVG</th></tr></thead>
+              <tbody>
+                {hitters.map((x, i) => (
+                  <tr key={x.pid}>
+                    <td className="border px-2 py-1">{i+1}</td>
+                    <td className="border px-2 py-1">{x.name}</td>
+                    <td className="border px-2 py-1 text-right">{x.AB}</td>
+                    <td className="border px-2 py-1 text-right">{x.OPS}</td>
+                    <td className="border px-2 py-1 text-right">{x.AVG}</td>
+                  </tr>
+                ))}
+                {hitters.length === 0 && <tr><td colSpan={5} className="border px-2 py-2 text-center text-gray-500">無資料</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="border rounded p-3 bg-white">
+            <div className="font-semibold mb-2">Top 5 投手（ERA，IP≥5）</div>
+            <table className="w-full text-sm border">
+              <thead><tr><th className="border px-2 py-1">#</th><th className="border px-2 py-1">球員</th><th className="border px-2 py-1 text-right">IP</th><th className="border px-2 py-1 text-right">ERA</th><th className="border px-2 py-1 text-right">WHIP</th></tr></thead>
+              <tbody>
+                {pitchers.map((x, i) => (
+                  <tr key={x.pid}>
+                    <td className="border px-2 py-1">{i+1}</td>
+                    <td className="border px-2 py-1">{x.name}</td>
+                    <td className="border px-2 py-1 text-right">{x.IP}</td>
+                    <td className="border px-2 py-1 text-right">{x.ERA}</td>
+                    <td className="border px-2 py-1 text-right">{x.WHIP}</td>
+                  </tr>
+                ))}
+                {pitchers.length === 0 && <tr><td colSpan={5} className="border px-2 py-2 text-center text-gray-500">無資料</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="border rounded p-3 bg-white">
+          <div className="font-semibold mb-2">徽章</div>
+          <div className="flex flex-wrap gap-2">
+            {players.map(p => {
+              const badges = [];
+              if (onBaseStreak.has(p.id)) badges.push("🔥 連續上壘 5+ 場");
+              if (errorless.has(p.id)) badges.push("🧤 零失誤 3+ 場");
+              if (!badges.length) return null;
+              return <div key={p.id} className="text-xs bg-slate-100 px-2 py-1 rounded-full">{p.name}：{badges.join("、")}</div>;
+            })}
+            {players.every(p => !(onBaseStreak.has(p.id) || errorless.has(p.id))) && <div className="text-sm text-gray-500">目前還沒有任何徽章。</div>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+/* ---------------- UI：比賽紀錄  BoxScore---------------- */
 
 // 判斷該半局是否進攻（依據 startDefense 與上下半）
 function isOffenseHalfSimple(g: Game, isTop: boolean) {
@@ -1352,6 +1532,15 @@ return (
             {/* 打線拖曳 */}
             <div className="border rounded p-2">
               <div className="font-semibold mb-2">打線（拖曳排序，可移除）</div>
+              {/* 打線模板操作 */}
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => copyLastLineupToGame(g)} disabled={g.locked}>從上一場複製</button>
+                <select className="text-xs border rounded px-1 py-1" disabled={g.locked || templates.length===0} onChange={(e)=>{const tid=Number(e.target.value)||0; if(tid){ applyTemplateToGame(g, tid); (e.target as HTMLSelectElement).value=""; }}} defaultValue="">
+                  <option value="">套用模板…</option>
+                  {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <button className="text-xs bg-amber-500 text-white hover:bg-amber-600 px-2 py-1 rounded ml-auto" onClick={() => saveTemplateFromGame(g)} disabled={g.locked}>儲存為模板</button>
+              </div>
               <DragDropContext onDragEnd={onDragEnd(g)}>
                 <Droppable droppableId={`lineup-${g.id}`}>
                   {(prov) => (
@@ -1387,7 +1576,58 @@ return (
           {/* 逐局（單半局）輸入 — 僅在逐局模式顯示 */}
           {g.mode === "inning" && <HalfStepper g={g} />}
 
-          {/* 每位球員本場輸入 */}
+
+          {/* 守備位置逐局（9×9） */}
+          <div className="border rounded p-2">
+            <div className="font-semibold mb-2">守備位置逐局</div>
+            <div className="overflow-x-auto">
+              <table className="border text-xs md:text-sm w-full">
+                <thead>
+                  <tr>
+                    <th className="border px-2 py-1 text-center">局\位</th>
+                    {["P","C","1B","2B","3B","SS","LF","CF","RF"].map((pos) => (
+                      <th key={pos} className="border px-2 py-1 text-center">{pos}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 9 }).map((_, r) => (
+                    <tr key={r}>
+                      <td className="border px-2 py-1 text-center">{r+1}</td>
+                      {Array.from({ length: 9 }).map((_, c) => {
+                        const pid = (g.defense?.[r]?.[c] ?? 0) || 0;
+                        return (
+                          <td key={c} className="border px-1 py-1">
+                            {g.locked ? (
+                              <span className="text-xs">{pidToName(g, pid) || "-"}</span>
+                            ) : (
+                              <select
+                                className="w-full border rounded px-1 py-1 text-xs"
+                                value={pid || 0}
+                                onChange={(e) => setDefense(g.id, r, c, Number(e.target.value)||0)}
+                              >
+                                <option value={0}>（空）</option>
+                                {g.lineup.map(pid => (
+                                  <option key={pid} value={pid}>{pidToName(g, pid)}</option>
+                                ))}
+                              </select>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!g.locked && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => copyDefenseRow(g.id, 1)}>複製上一局（2→1 無效）</button>
+                <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => clearDefenseAll(g.id)}>全部清空</button>
+              </div>
+            )}
+          </div>
+              {/* 每位球員本場輸入 */}
           <div className="space-y-3">
             {g.lineup.map((pid) => {
               const info = getNameAndPositions(players, g, pid);
@@ -2129,6 +2369,7 @@ const TrendTab = ({ games }: TrendTabProps) => {
 { /* Career 已在這裡 */ }
 
 {subTab === "career" && <CareerPanel />}
+{subTab === "rank" && <RankingsAndBadges />}
 
           </div>
         )}
