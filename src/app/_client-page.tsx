@@ -1400,7 +1400,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
             </table>
           </div>
         </>
- */}
+
             <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => { const pid=Number(curBatterPid); addStatLocal(pid,"batting","BB",1); }}>{'BB'}</button>
             <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => { const pid=Number(curBatterPid); addStatLocal(pid,"batting","HBP",1); }}>{'HBP'}</button>
           </div>
