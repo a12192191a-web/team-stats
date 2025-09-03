@@ -1659,7 +1659,7 @@ return (
             <div className="mt-2 text-sm">
               <div className="font-semibold">換人紀錄</div>
               <ul className="list-disc pl-4">
-                {g.subs.map((s, i) => (
+                {(g.subs ?? []).map((s, i) => (
                   <li key={i}>
                     {s.inning}局：第 {s.posIndex + 1} 棒
                     {getNameAndPositions(players, g, s.outPid).name}
