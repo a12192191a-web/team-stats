@@ -1,6 +1,5 @@
 "use client";
 
-
 // ===== Hot Update with Autosave =====
 const LS_PLAYERS = "rsbm.players.v2";
 const LS_GAMES   = "rsbm.games.v2";
