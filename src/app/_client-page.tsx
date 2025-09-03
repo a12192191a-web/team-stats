@@ -222,7 +222,7 @@ const STORAGE = {
   compareSelH: "rsbm.compare.sel.h",
   compareSelP: "rsbm.compare.sel.p",
   compareSelF: "rsbm.compare.sel.f",
-};;
+};
 
 const toNonNegNum = (v: any) => {
   const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0;
@@ -509,6 +509,16 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
 /* =========================================================
    主頁
 ========================================================= */
+async function hardRefresh() {
+  // 以版本參數組出回跳網址
+  const url = new URL(window.location.href);
+  url.searchParams.set("v", BUILD || String(Date.now()));
+  const next = url.toString();
+
+  // 導航到 /api/clear（會回 200 並自動轉回 next）
+  window.location.href = "/api/clear?next=" + encodeURIComponent(next);
+}
+
 export default function Home() {
 useFloatingCheckUpdateButton(hardRefresh);
 
@@ -612,15 +622,6 @@ useFloatingCheckUpdateButton(hardRefresh);
 
   /* ---------------- Navbar ---------------- */
 
-async function hardRefresh() {
-  // 以版本參數組出回跳網址
-  const url = new URL(window.location.href);
-  url.searchParams.set("v", BUILD || String(Date.now()));
-  const next = url.toString();
-
-  // 導航到 /api/clear（會回 200 並自動轉回 next）
-  window.location.href = "/api/clear?next=" + encodeURIComponent(next);
-}
 
 
 
@@ -1307,10 +1308,15 @@ const HalfStepper = ({ g }: { g: Game }) => {
   endPA();
 };
   const walkLike = (kind: "BB"|"HBP") => {
-    if (!curBatterPid) return;
-    const pid = Number(curBatterPid);
-    addStatLocal(pid, "batting", kind, 1);
-    if (pitcherPid) addStatLocal(Number(pitcherPid), "pitching", kind, 1);
+  if (!curBatterPid) return;
+  const pid = Number(curBatterPid);
+  addStatLocal(pid, "batting", kind, 1);
+  if (pitcherPid) {
+    const ppid = Number(pitcherPid);
+    addStatLocal(ppid, "pitching", kind, 1);
+  }
+  endPA();
+};Local(Number(pitcherPid), "pitching", kind, 1);
     endPA();
   };
 
@@ -1444,7 +1450,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
       )}
     </div>
   );
-};)}
+)}
               </tbody>
             </table>
           </div>
