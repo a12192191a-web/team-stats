@@ -1655,7 +1655,7 @@ return (
           </div>
     
           {/* 換人紀錄 */}
-          {g.subs?.length > 0 && (
+          {(g.subs?.length ?? 0) > 0 && (
             <div className="mt-2 text-sm">
               <div className="font-semibold">換人紀錄</div>
               <ul className="list-disc pl-4">
