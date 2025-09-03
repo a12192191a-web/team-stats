@@ -204,6 +204,7 @@ type Game = {
   savePid?: number;  // ← 新增
   startDefense?: boolean;  // 逐局模式專用：true=先守，false=先攻
   mode?: GameMode;         // 記錄方式：classic=傳統、inning=逐局
+  subs?: { inning: number; posIndex: number; outPid: number; inPid: number }[];
   defense?: DefenseGrid;
 };
 
@@ -876,6 +877,31 @@ const addGame = () => {
     if (p) return p.name;
     const snap = g.roster?.[pid];
     return snap ? snap.name : `#${pid}`;
+  };
+
+
+  /* ---------------- 換人機制 ---------------- */
+  const replacePlayer = (gid: number, outPid: number, inPid: number) => {
+    setGames(prev => prev.map(g => {
+      if (g.id !== gid || g.locked) return g;
+      if (!g.lineup.includes(outPid)) return g;
+      if (g.lineup.includes(inPid)) {
+        alert("此球員已在打線中！");
+        return g;
+      }
+      const idx = g.lineup.indexOf(outPid);
+      const newLineup = [...g.lineup];
+      newLineup[idx] = inPid;
+      const newStats = { ...g.stats };
+      if (!newStats[inPid]) newStats[inPid] = emptyTriple();
+      const subs = [...(g.subs ?? []), {
+        inning: g.innings.findIndex(v => v > 0) + 1,
+        posIndex: idx,
+        outPid,
+        inPid,
+      }];
+      return { ...g, lineup: newLineup, stats: newStats, subs };
+    }));
   };
 
   /* ---------------- 生涯同步 ---------------- */
@@ -1556,7 +1582,7 @@ return (
   {...p2.dragHandleProps}
   className="flex items-center justify-between bg-gray-50 border rounded px-2 py-2 md:py-2.5 touch-none select-none"
 >
-  <span className="flex-1 pr-2">{idx + 1}棒 — {info.name}（{info.positions.join("/") || "—"}）</span>
+  <span className="flex-1 pr-2">{idx + 1}棒 — {info.name} <button onClick={() => { const inPid = Number(prompt('輸入要換上的球員 ID')||0); if(inPid) replacePlayer(g.id, pid, inPid); }} className='ml-2 text-xs bg-yellow-500 text-white px-1 rounded'>替換</button>（{info.positions.join("/") || "—"}）</span>
   {!g.locked && (
     <button onClick={() => removeFromLineup(g, pid)} className="text-xs md:text-sm bg-red-500 text-white px-2.5 md:px-3 py-0.5 md:py-1 rounded">✖</button>
   )}
@@ -1627,6 +1653,22 @@ return (
               </div>
             )}
           </div>
+    
+          {/* 換人紀錄 */}
+          {g.subs?.length > 0 && (
+            <div className="mt-2 text-sm">
+              <div className="font-semibold">換人紀錄</div>
+              <ul className="list-disc pl-4">
+                {g.subs.map((s, i) => (
+                  <li key={i}>
+                    {s.inning}局：第 {s.posIndex + 1} 棒
+                    {getNameAndPositions(players, g, s.outPid).name}
+                    → {getNameAndPositions(players, g, s.inPid).name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
               {/* 每位球員本場輸入 */}
           <div className="space-y-3">
             {g.lineup.map((pid) => {
@@ -1636,7 +1678,7 @@ return (
 
               return (
                 <div key={pid} className="border rounded p-2">
-  <div className="font-semibold mb-1">{info.name}</div>
+  <div className="font-semibold mb-1">{info.name} <button onClick={() => { const inPid = Number(prompt('輸入要換上的球員 ID')||0); if(inPid) replacePlayer(g.id, pid, inPid); }} className='ml-2 text-xs bg-yellow-500 text-white px-1 rounded'>替換</button></div>
 
                   {/* 打擊 */}
                   <table className="border text-sm mb-2 w-full">
@@ -1811,7 +1853,7 @@ return (
                   const s = calcStats(cur.batting, cur.pitching, cur.fielding, cur.baserunning);
                   return (
                     <tr key={pid}>
-                      <td className="border px-2 py-1 whitespace-nowrap sticky left-0 bg-white z-10">{info.name}</td>
+                      <td className="border px-2 py-1 whitespace-nowrap sticky left-0 bg-white z-10">{info.name} <button onClick={() => { const inPid = Number(prompt('輸入要換上的球員 ID')||0); if(inPid) replacePlayer(g.id, pid, inPid); }} className='ml-2 text-xs bg-yellow-500 text-white px-1 rounded'>替換</button></td>
                       <td className="border px-2 py-1 text-right">{s.AB}</td>
                       <td className="border px-2 py-1 text-right">{s.H}</td>
                       <td className="border px-2 py-1 text-right">{s.AVG}</td>
