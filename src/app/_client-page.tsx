@@ -5,6 +5,8 @@ const LS_PLAYERS = "rsbm.players.v2";
 const LS_GAMES   = "rsbm.games.v2";
 const LS_BACKUP  = "rsbm.autosave.backup";
 const SS_ONCE    = "rsbm.forceReload.once";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 const LS_TEMPLATES = "rsbm.lineup.templates.v1";
 
 function getBuildIdFromHtml(html: string): string | null {
@@ -30,7 +32,7 @@ function useHotUpdateWithAutosave(players: any, games: any) {
 
     const check = async () => {
       try {
-        const res = await fetch(`/__?__build_check=${Date.now()}`, { cache: "no-store" });
+        const res = await fetch("/", { cache: "no-store" });
         const html = await res.text();
         const latest = getBuildIdFromHtml(html);
         if (!alive) return;
@@ -89,10 +91,10 @@ const buildLabel = (() => {
   } catch { return ""; }
 })();
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } import { useState, useEffect, useRef, useMemo } 
 import { supabase } from "@/lib/supabase";
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
+  ResponsiveContainer, XAxis, YAxis, Tooltip, Legend,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,LineChart, Line,
 } from "recharts";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
@@ -504,9 +506,10 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
    主頁
 ========================================================= */
 export default function Home() {
+  // hot-update: ensure latest build + preserve autosave
+  useHotUpdateWithAutosave(players, games);
+
 useFloatingCheckUpdateButton(hardRefresh);
-
-
 
 
 
@@ -519,9 +522,10 @@ useFloatingCheckUpdateButton(hardRefresh);
   const [compare, setCompare] = useState<number[]>([]);
   const [mounted, setMounted] = useState(false);
   const [ipDraft, setIpDraft] = useState<Record<string, string>>({});
+  // 雲端 updated_at（做覆蓋確認用）
   const [cloudTS, setCloudTS] = useState<string | null>(null);
   const lastSaveAtRef = useRef(0); 
- useHotUpdateWithAutosave(players, games);
+  // 掛載後載入「本機」資料（你也可以改成預設讀雲端，見下方注解）
   useEffect(() => {
     setMounted(true);
     if (typeof window === "undefined") return;
@@ -530,6 +534,8 @@ useFloatingCheckUpdateButton(hardRefresh);
     const cmp = safeParse(localStorage.getItem(STORAGE.compare), []);
     setCompare(Array.isArray(cmp) ? cmp.map((x: any) => Number(x)).filter(Number.isFinite) : []);
   }, []);
+
+  // 本機自動同步（首輪不寫入）
   useDebouncedLocalStorage(STORAGE.players, players, 400);
   useDebouncedLocalStorage(STORAGE.games,   games,   400);
   useDebouncedLocalStorage(STORAGE.compare, compare, 400);
@@ -537,12 +543,13 @@ useFloatingCheckUpdateButton(hardRefresh);
   /* ---------------- 雲端同步 ---------------- */
 
 
-  async function loadFromCloud() {
+  async const loadFromCloud = useCallback(async () => {
     const { data, error } = await supabase
       .from("app_state")
       .select("data, updated_at")
       .eq("id", "default")
       .maybeSingle();
+
     if (error) {
       alert("雲端載入失敗：" + error.message);
       return;
@@ -553,7 +560,7 @@ useFloatingCheckUpdateButton(hardRefresh);
     setCompare(Array.isArray(payload.compare) ? payload.compare.map((x: any) => Number(x)).filter(Number.isFinite) : []);
     setCloudTS(data?.updated_at ?? null);
     alert("已從雲端載入。");
-  }
+  }, [supabase, setPlayers, setGames, setCompare]);
 
   async function saveToCloud() {
     // 確認是否覆蓋較新版本
@@ -1315,6 +1322,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
 
   
 const BoxScore = () => {
+
   const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
   const filteredGames = games.filter(g =>
     modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab)
