@@ -1340,12 +1340,12 @@ const HalfStepper = ({ g }: { g: Game }) => {
                               value={ipDraft[key] ?? String(rawValue ?? "")}
                               onChange={(e) => {
                                 const prev = Number(ipDraft[key] ?? rawValue ?? 0) || 0;
-                                const next = stepIpValue(prev, e.target.value);
+                                const next = stepIpValue(prev,Number(e.target.value));
                                 setIpDraft((d) => ({ ...d, [key]: String(next) }));
                               }}
                               onBlur={(e) => {
                                 const prev = Number(rawValue ?? 0) || 0;
-                                const next = stepIpValue(prev, e.currentTarget.value);
+                                const next = stepIpValue(prev, Number(e.currentTarget.value));
                                 updateGameStat(g.id, pid, "pitching", "IP", Number(next) || 0);
                                 setIpDraft((d) => {
                                   const nd = { ...d }; delete nd[key]; return nd;
