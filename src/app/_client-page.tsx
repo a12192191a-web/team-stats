@@ -1412,7 +1412,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
             <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => addStatLocal(Number(curBatterPid),"baserunning","SB",1)}>SB+</button>
             <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => addStatLocal(Number(curBatterPid),"baserunning","CS",1)}>CS</button>
           </div>
-        </>
+        
 ) : (
                             <NumCell
                               value={toNonNegNum((cur.batting as any)[stat])}
