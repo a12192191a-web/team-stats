@@ -508,6 +508,8 @@ useFloatingCheckUpdateButton(hardRefresh);
 
 
 
+
+
   const [topTab, setTopTab] = useState<"players" | "features">("players");
   const [subTab, setSubTab] = useState<"box" | "compare" | "career" | "export"| "trend" | "rank">("box");
   const [templates, setTemplates] = useState<LineupTemplate[]>([]);
@@ -519,7 +521,7 @@ useFloatingCheckUpdateButton(hardRefresh);
   const [ipDraft, setIpDraft] = useState<Record<string, string>>({});
   const [cloudTS, setCloudTS] = useState<string | null>(null);
   const lastSaveAtRef = useRef(0); 
-  // 掛載後載入「本機」資料（你也可以改成預設讀雲端，見下方注解）
+ useHotUpdateWithAutosave(players, games);
   useEffect(() => {
     setMounted(true);
     if (typeof window === "undefined") return;
@@ -541,7 +543,6 @@ useFloatingCheckUpdateButton(hardRefresh);
       .select("data, updated_at")
       .eq("id", "default")
       .maybeSingle();
- useHotUpdateWithAutosave(players, games);
     if (error) {
       alert("雲端載入失敗：" + error.message);
       return;
