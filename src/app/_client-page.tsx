@@ -1398,6 +1398,11 @@ const HalfStepper = ({ g }: { g: Game }) => {
     });
     return list.length ? list : (g.lineup || []);
   })();
+// HalfStepper 內新增（位置在 setPitcher 上下皆可）
+const ensureTriple = (nx: any, pid: number) => {
+  nx.stats = nx.stats || {};
+  if (!nx.stats[pid]) nx.stats[pid] = emptyTriple();
+};
 
   // 設定/更換投手（只影響「目前半局」）
   const setPitcher = (pid: number) => {
@@ -1413,42 +1418,53 @@ const HalfStepper = ({ g }: { g: Game }) => {
     );
   };
 
-  // 逐球：B / S / F
-  const addPitch = (mark: PitchMark) => {
-    let noPitcher = false;                  // 專供守備半局檢查
-    setGames(prev =>
-      prev.map(gg => {
-        if (gg.id !== g.id) return gg;
-        const nx: any = { ...gg };
-        ensureInningsEvents(nx, inningIdx);
-        const half = getCurHalf(nx);        // ✅ 固定當前半局
+// 逐球：B / S / F
+const addPitch = (mark: PitchMark) => {
+  let noPitcher = false;
+  setGames(prev =>
+    prev.map(gg => {
+      if (gg.id !== g.id) return gg;
+      const nx: any = { ...gg };
+      ensureInningsEvents(nx, inningIdx);
+      const half = getCurHalf(nx); // 當前半局
 
-        // 守備半局需要先有投手；進攻半局不檢查
-        if (!offense && !half.pitcherId) {
-          noPitcher = true;
-          return nx;                        // 不寫任何資料
-        }
-
-        // 取得/建立當前打席（上一個有結果就開新打席）
-        const batterId = curBatterId;
-        let pa = half.pas[half.pas.length - 1];
-        if (!pa || pa.result !== null) {
-          pa = {
-            batterId,
-            pitcherId: half.pitcherId || 0,
-            pitches: [],
-            result: null,
-            outsAdded: 0,
-            ts: Date.now(),
-          };
-          half.pas.push(pa);
-        }
-        pa.pitches.push(mark);
+      // 守備半局一定要先有投手
+      if (!offense && !half.pitcherId) {
+        noPitcher = true;
         return nx;
-      })
-    );
-    if (noPitcher) alert("請先選擇當局投手");
-  };
+      }
+
+      // 取得/建立當前打席
+      const batterId = curBatterId;
+      let pa = half.pas[half.pas.length - 1];
+      if (!pa || pa.result !== null) {
+        pa = {
+          batterId,
+          pitcherId: half.pitcherId || 0,
+          pitches: [],
+          result: null,
+          outsAdded: 0,
+          ts: Date.now(),
+        };
+        half.pas.push(pa);
+      }
+
+      // 寫入逐球
+      pa.pitches.push(mark);
+
+      // ★ 讓畫面有反饋：守備半局時同步加投手 PC
+      if (!offense && half.pitcherId) {
+        ensureTriple(nx, half.pitcherId);
+        nx.stats[half.pitcherId].pitching.PC =
+          toNonNegNum(nx.stats[half.pitcherId].pitching.PC) + 1;
+      }
+
+      return nx;
+    })
+  );
+  if (noPitcher) alert("請先選擇當局投手");
+};
+
 
   // 提交打席結果（K/BB/1B/...），處理出局與輪下一棒/換半局
   const commitResult = (res: PAResult) => {
