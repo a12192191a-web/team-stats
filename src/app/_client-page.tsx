@@ -1455,6 +1455,37 @@ const positionsOf = (pid?: number): string[] => {
   const getCurHalf = (nx: any): HalfInningEvent =>
     isTop ? nx.inningsEvents[inningIdx].top : nx.inningsEvents[inningIdx].bot;
 
+// 在 HalfStepper 內新增：用來防止重複前進（同一半局只前進一次）
+const advanceGateRef = useRef<string>("");
+
+// 取得目前半局的唯一 key
+const halfKey = `${g.id}:${inningIdx}:${isTop ? "T" : "B"}`;
+
+// 統一的前進函式（有閘門，避免重複 +2）
+const advanceHalf = () => {
+  if (advanceGateRef.current === halfKey) return; // 已前進過
+  advanceGateRef.current = halfKey;
+  setStep((s) => s + 1);
+};
+
+// 監聽「當前半局出局數」；只要達到 3，就強制前進
+useEffect(() => {
+  const outs = (curHalf?.outs ?? 0);
+  if (outs >= 3) {
+    // 保險一下，把 outs 壓到 3（避免有人手動寫 4 之類）
+    setGames(prev => prev.map(gg => {
+      if (gg.id !== g.id) return gg;
+      const nx: any = { ...gg };
+      if (!nx.inningsEvents?.[inningIdx]) return nx;
+      const half = isTop ? nx.inningsEvents[inningIdx].top : nx.inningsEvents[inningIdx].bot;
+      half.outs = 3 as 0|1|2|3;
+      return nx;
+    }));
+    advanceHalf();
+  }
+  // 依賴包含 halfKey 才能在換半局後重設同一半局的「已前進」判斷
+}, [curHalf?.outs, halfKey]);
+
   // 僅 P 可當投手
   const pitcherOptions = (g.lineup || []).filter(pid => positionsOf(pid).includes("P"));
   const noP = pitcherOptions.length === 0;
@@ -1626,8 +1657,8 @@ const positionsOf = (pid?: number): string[] => {
     if (offense) setRbiInput(0); else setErInput(0);
 
     // 三出局 → 自動切半局（micro + macro 兩層保險）
-    queueMicrotask(() => { if (shouldAdvanceHalf) setStep(s => s + 1); });
-    setTimeout(() => { if (shouldAdvanceHalf) setStep(s => s + 1); }, 0);
+   if (shouldAdvanceHalf) advanceHalf();
+
   };
 
   // --- 視圖資料（球數顯示、投手狀態）---
