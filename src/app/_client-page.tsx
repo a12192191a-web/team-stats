@@ -215,6 +215,8 @@ type Game = {
 const MLB_POSITIONS = ["P","C","1B","2B","3B","SS","LF","CF","RF","DH"];
 const HANDS: Array<"R"|"L"|"S"> = ["R","L","S"];
 const DEF_POS = ["P","C","1B","2B","3B","SS","LF","CF","RF"];
+const SHOW_PLAYER_PANEL = false; // 關閉守備逐局下方的單一球員表
+
 const STORAGE = {
   players: "rsbm.players.v2",
   games:   "rsbm.games.v2",
@@ -1974,6 +1976,7 @@ return (
               const info = getNameAndPositions(players, g, pid);
               const cur = g.stats[pid] ?? emptyTriple();
               const readOnly = g.locked;
+
 
               return (
                 <div key={pid} className="border rounded p-2">
