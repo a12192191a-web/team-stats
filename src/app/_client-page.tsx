@@ -711,7 +711,7 @@ async function hardRefresh() {
 
 
 const Navbar = () => (
-+  <div className="w-full fixed top-0 left-0 right-0 z-[1000] bg-[#08213A] text-white flex items-center gap-4 px-4 py-2 pointer-events-auto">
+ <div className="w-full fixed top-0 left-0 right-0 z-[1000] bg-[#08213A] text-white flex items-center gap-4 px-4 py-2 pointer-events-auto">
     <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
     <div className="font-bold tracking-wide">RS Baseball Manager</div>
     <div className="ml-auto flex flex-wrap gap-2">
