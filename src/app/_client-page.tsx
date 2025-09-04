@@ -1647,20 +1647,19 @@ const positionsOf = (pid?: number): string[] => {
 const hasPitcher = typeof curHalf.pitcherId === "number";
 const cantPitch =
   !offense && (noP || !hasPitcher || !positionsOf(curHalf.pitcherId).includes("P"));
-
-// === 三出局強制換半局（放在 curHalf 之後） ===
+  
 const advanceGateRef = useRef<string>("");
-const halfKey = `${g.id}:${inningIdx}:${isTop ? "T" : "B"}`;
+const halfKeyStr = `${g.id}:${inningIdx}:${isTop ? "T" : "B"}`;
 const advanceHalf = () => {
-  if (advanceGateRef.current === halfKey) return; // 同一半局只前進一次
-  advanceGateRef.current = halfKey;
+  if (advanceGateRef.current === halfKeyStr) return; // 同一半局只前進一次
+  advanceGateRef.current = halfKeyStr;
   setStep(s => s + 1);
-}, [halfKey]);
+};
 
 const outsNow = curHalf?.outs ?? 0;
 useEffect(() => {
   if (outsNow >= 3) {
-    // 壓到 3，避免有人寫成 4 之類
+    // 將 outs 壓到 3，避免非預期值
     setGames(prev => prev.map(gg2 => {
       if (gg2.id !== g.id) return gg2;
       const nx: any = { ...gg2 };
@@ -1671,7 +1670,7 @@ useEffect(() => {
     }));
     advanceHalf();
   }
-}, [outsNow, halfKey, advanceHalf, g.id, inningIdx, isTop]);
+}, [outsNow, halfKeyStr, g.id, inningIdx, isTop]);
 
   // --- 小元件：點點列 ---
   const DotRow = ({ label, n, total, colorClass }:
