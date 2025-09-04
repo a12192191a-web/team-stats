@@ -1651,7 +1651,7 @@ const cantPitch =
 // === 三出局強制換半局（放在 curHalf 之後） ===
 const advanceGateRef = useRef<string>("");
 const halfKey = `${g.id}:${inningIdx}:${isTop ? "T" : "B"}`;
-const advanceHalf = useCallback(() => {
+const advanceHalf = () => {
   if (advanceGateRef.current === halfKey) return; // 同一半局只前進一次
   advanceGateRef.current = halfKey;
   setStep(s => s + 1);
