@@ -951,6 +951,36 @@ const copyLastLineupToGame = (cur: Game) => {
     });
   });
 };
+// 依模板 id，把打線套到「目前這場」；只改 lineup，不動守備/統計
+const applyTemplateToGame = (cur: Game, tid: number) => {
+  setGames(prev =>
+    prev.map(g => {
+      if (g.id !== cur.id) return g;
+
+      // 找模板
+      const t = templates.find(t0 => t0.id === tid);
+      if (!t) {
+        alert("找不到此打線模板");
+        return g;
+      }
+
+      // 嘗試從模板取出打線陣列（容錯幾個常見欄位名）
+      const raw: any =
+        (t as any).lineup ??
+        (t as any).ids ??
+        (t as any).players ??
+        [];
+
+      const lineup: number[] = Array.isArray(raw)
+        ? raw.map((x: any) => Number(x) || 0).filter(Boolean)
+        : [];
+
+      return { ...g, lineup };
+    })
+  );
+};
+
+
 
 
   /* ---------------- 換人機制 ---------------- */
