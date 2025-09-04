@@ -1479,8 +1479,10 @@ const HalfStepper = ({ g }: { g: Game }) => {
       if (!offense && erInput)  pa.er  = erInput;
 
       // 累出局
-      half.outs = Math.min<0|1|2|3>(3 as any, ((half.outs || 0) + pa.outsAdded) as any);
-      shouldAdvanceHalf = half.outs >= 3;
+   const newOuts = Math.max(0, Math.min(3, (half.outs ?? 0) + pa.outsAdded)) as 0 | 1 | 2 | 3;
+half.outs = newOuts;
+
+        shouldAdvanceHalf = half.outs >= 3;
 
       // 進攻半局：換下一棒
       if (offense) {
