@@ -2238,7 +2238,7 @@ return (
           {/* 逐局比分 */}
           <div className="overflow-x-auto md:overflow-x-visible">
 <table className="border text-sm w-full">
-<thead className="sticky top-0 bg-white z-[1]">
+<thead className="sticky top-16 md:top-20 bg-white z-[500]">
                 <tr>{[1,2,3,4,5,6,7,8,9].map((n) => <th key={n} className="border px-2 py-1 text-center">{n}</th>)}
                   <th className="border px-2 py-1 text-center">R</th>
                   <th className="border px-2 py-1 text-center">H</th>
