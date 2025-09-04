@@ -6,6 +6,7 @@ const LS_GAMES   = "rsbm.games.v2";
 const LS_BACKUP  = "rsbm.autosave.backup";
 const SS_ONCE    = "rsbm.forceReload.once";
 const LS_TEMPLATES = "rsbm.lineup.templates.v1";
+const FORCE_RELOAD_ON_ENTER = false;
 
 function getBuildIdFromHtml(html: string): string | null {
   const m = html.match(/"buildId"\s*:\s*"([A-Za-z0-9\-_.]+)"/);
@@ -14,7 +15,9 @@ function getBuildIdFromHtml(html: string): string | null {
 
 function useHotUpdateWithAutosave(players: any, games: any) {
   // A) 直進系統就刷新（每個分頁只做一次，避免死循環）
+  // 已關閉以避免進入「比賽紀錄」時閃爍
   useEffect(() => {
+    if (!FORCE_RELOAD_ON_ENTER) return;
     try {
       if (!sessionStorage.getItem(SS_ONCE)) {
         sessionStorage.setItem(SS_ONCE, "1");
@@ -1741,6 +1744,10 @@ useEffect(() => {
       {/* 逐球：B / S / F */}
       <div className="flex items-center gap-2">
         <div className="text-sm w-16">逐球：</div>
+      {(!offense && cantPitch) && (
+        <div className="text-xs text-red-600 ml-16">請先在本半局選擇投手（且此球員需標註 P），才能記錄好壞球。</div>
+      )}
+
         <button type="button" className={`px-3 py-1 border rounded ${disBtn(!cantPitch)}`} onClick={() => addPitch("B")} disabled={cantPitch}>B</button>
         <button type="button" className={`px-3 py-1 border rounded ${disBtn(!cantPitch)}`} onClick={() => addPitch("S")} disabled={cantPitch}>S</button>
         <button type="button" className={`px-3 py-1 border rounded ${disBtn(!cantPitch)}`} onClick={() => addPitch("F")} disabled={cantPitch}>F</button>
