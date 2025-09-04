@@ -564,6 +564,12 @@ const setAllDefRows = (gid: number, folded: boolean) => {
       return next;
     });
   };
+// 依當前比賽 g 與全域 players，用 pid 取球員名字
+const pidToName = (g: Game, pid?: number) => {
+  if (!pid) return "";
+  const info = getNameAndPositions(players, g, pid);
+  return info?.name ?? "";
+};
 
 
   /* ---------------- 雲端同步 ---------------- */
