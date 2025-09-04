@@ -1346,37 +1346,37 @@ function isOffenseHalfSimple(g: Game, isTop: boolean) {
   return g.startDefense ? !isTop : isTop;
 }
 
-/* 單半局步進式輸入（守備半局＝當局投手數據＋全員守備；攻擊半局＝打擊＋跑壘） */
-// ---- 事件版 HalfStepper（逐球＋結果按鈕）----
+// ---- 事件版 HalfStepper（逐球＋結果按鈕，修正半局與投手檢查）----
 const HalfStepper = ({ g }: { g: Game }) => {
-  // 你原本就有的 state／工具：盡量沿用
-  const [step, setStep] = useState(0);                     // 0=1上,1=1下,2=2上...
+  // 半局指標：0=1上,1=1下,2=2上...
+  const [step, setStep] = useState(0);
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
 
-  // 先攻/先守 判定：專案裡原本有 isOffenseHalfSimple，就沿用；沒有就用 isTop 當預設
-  const offense = typeof (isOffenseHalfSimple) === "function"
-    ? isOffenseHalfSimple(g, isTop)
-    : isTop;
+  // 判定此半局是否「我方進攻」
+  const offense =
+    typeof (isOffenseHalfSimple) === "function"
+      ? isOffenseHalfSimple(g, isTop)
+      : isTop;
 
-  // 打線與目前打者指標（各半局獨立循環）
+  // 打線與目前打者
   const lineupPids = (g.lineup || []).filter(Boolean);
   const batterIdxKey = isTop ? "nextBatterIdxTop" : "nextBatterIdxBot";
   const nextIdx = (g as any)[batterIdxKey] ?? 0;
   const curBatterId = offense ? (lineupPids[nextIdx] || 0) : 0;
 
-  // 當局輸入：RBI（進攻用）、ER（防守用）
+  // 附加輸入（打點 / 自責）
   const [rbiInput, setRbiInput] = useState(0);
-  const [erInput,  setErInput ] = useState(0);
+  const [erInput, setErInput] = useState(0);
 
-  // 取名工具（專案既有 getNameAndPositions / players）
+  // 取名工具（你專案已存在 players / getNameAndPositions）
   const nameOf = (pid?: number) => {
     if (!pid) return "";
     const info = getNameAndPositions(players, g, pid);
     return info?.name ?? "";
   };
 
-  // 建立/確保 inningsEvents 結構
+  // ---- 事件資料容器：在 g 上動態建立 inningsEvents ----
   const ensureInningsEvents = (gg: any, upto: number) => {
     gg.inningsEvents = gg.inningsEvents ?? [];
     while (gg.inningsEvents.length <= upto) {
@@ -1386,12 +1386,11 @@ const HalfStepper = ({ g }: { g: Game }) => {
       });
     }
   };
+  // 取得「目前半局」的物件（只用 isTop，避免寫到相反半局）
+  const getCurHalf = (nx: any) =>
+    isTop ? nx.inningsEvents[inningIdx].top : nx.inningsEvents[inningIdx].bot;
 
-  // 取得當前半局（以 setGames 時間點為準）
-  const getHalf = (gg: any, idx: number, top: boolean) =>
-    (top ? gg.inningsEvents[idx].top : gg.inningsEvents[idx].bot) as HalfInningEvent;
-
-  // 挑投手名單：先列出能守 P 的球員，若沒有就列打線所有人（避免沒人可選）
+  // 投手選單（優先顯示可守 P 的；沒有就整個打線）
   const pitcherOptions = (() => {
     const list = (g.lineup || []).filter(pid => {
       const pos = (getNameAndPositions(players, g, pid)?.positions || []);
@@ -1400,115 +1399,119 @@ const HalfStepper = ({ g }: { g: Game }) => {
     return list.length ? list : (g.lineup || []);
   })();
 
-  // 設定/更換投手（只影響當前半局）
+  // 設定/更換投手（只影響「目前半局」）
   const setPitcher = (pid: number) => {
-    setGames(prev => prev.map(gg => {
-      if (gg.id !== g.id) return gg;
-      const nx: any = { ...gg };
-      ensureInningsEvents(nx, inningIdx);
-const half = getHalf(nx, inningIdx, isTop); // 針對目前半局
-
-      half.pitcherId = pid || undefined;
-      return nx;
-    }));
+    setGames(prev =>
+      prev.map(gg => {
+        if (gg.id !== g.id) return gg;
+        const nx: any = { ...gg };
+        ensureInningsEvents(nx, inningIdx);
+        const half = getCurHalf(nx);        // ✅ 固定寫到當前半局
+        half.pitcherId = pid || undefined;
+        return nx;
+      })
+    );
   };
 
   // 逐球：B / S / F
   const addPitch = (mark: PitchMark) => {
-    let ok = false;
-    setGames(prev => prev.map(gg => {
-      if (gg.id !== g.id) return gg;
-      const nx: any = { ...gg };
-      ensureInningsEvents(nx, inningIdx);
-    const half = getHalf(nx, inningIdx, isTop);
+    let noPitcher = false;                  // 專供守備半局檢查
+    setGames(prev =>
+      prev.map(gg => {
+        if (gg.id !== g.id) return gg;
+        const nx: any = { ...gg };
+        ensureInningsEvents(nx, inningIdx);
+        const half = getCurHalf(nx);        // ✅ 固定當前半局
 
+        // 守備半局需要先有投手；進攻半局不檢查
+        if (!offense && !half.pitcherId) {
+          noPitcher = true;
+          return nx;                        // 不寫任何資料
+        }
 
-      // 防守半局，沒有投手就不能記球
-  if (!offense && !half.pitcherId) return nx;
-
-
-      // 取得/建立當前 PA（若上一個 PA 已有 result，開新 PA）
-      const batterId = curBatterId;
-      let pa = half.pas[half.pas.length - 1];
-      if (!pa || pa.result !== null) {
-        pa = {
-          batterId,
-          pitcherId: half.pitcherId || 0,
-          pitches: [],
-          result: null,
-          outsAdded: 0,
-          ts: Date.now(),
-        };
-        half.pas.push(pa);
-      }
-      pa.pitches.push(mark);
-      ok = true;
-      return nx;
-    }));
-    if (!ok && !offense) alert("請先選擇當局投手");
+        // 取得/建立當前打席（上一個有結果就開新打席）
+        const batterId = curBatterId;
+        let pa = half.pas[half.pas.length - 1];
+        if (!pa || pa.result !== null) {
+          pa = {
+            batterId,
+            pitcherId: half.pitcherId || 0,
+            pitches: [],
+            result: null,
+            outsAdded: 0,
+            ts: Date.now(),
+          };
+          half.pas.push(pa);
+        }
+        pa.pitches.push(mark);
+        return nx;
+      })
+    );
+    if (noPitcher) alert("請先選擇當局投手");
   };
 
-  // 提交打席結果（K/BB/1B/2B/...），並處理出局與換半局/換打者
+  // 提交打席結果（K/BB/1B/...），處理出局與輪下一棒/換半局
   const commitResult = (res: PAResult) => {
     let shouldAdvanceHalf = false;
-    setGames(prev => prev.map(gg => {
-      if (gg.id !== g.id) return gg;
-      const nx: any = { ...gg };
-      ensureInningsEvents(nx, inningIdx);
-    const half = getHalf(nx, inningIdx, isTop);
+    setGames(prev =>
+      prev.map(gg => {
+        if (gg.id !== g.id) return gg;
+        const nx: any = { ...gg };
+        ensureInningsEvents(nx, inningIdx);
+        const half = getCurHalf(nx);        // ✅ 固定當前半局
 
+        // 守備半局若沒投手就忽略（與 addPitch 一致）
+        if (!offense && !half.pitcherId) return nx;
 
+        // 取得/建立當前打席
+        const batterId = curBatterId;
+        let pa = half.pas[half.pas.length - 1];
+        if (!pa || pa.result !== null) {
+          pa = {
+            batterId,
+            pitcherId: half.pitcherId || 0,
+            pitches: [],
+            result: null,
+            outsAdded: 0,
+            ts: Date.now(),
+          };
+          half.pas.push(pa);
+        }
 
-      // 取得/建立當前 PA
-      const batterId = curBatterId;
-      let pa = half.pas[half.pas.length - 1];
-      if (!pa || pa.result !== null) {
-        pa = {
-          batterId,
-          pitcherId: half.pitcherId || 0,
-          pitches: [],
-          result: null,
-          outsAdded: 0,
-          ts: Date.now(),
-        };
-        half.pas.push(pa);
-      }
+        // 寫入結果與出局數
+        pa.result = res;
+        pa.outsAdded = outsOf(res);
+        if (offense && rbiInput) pa.rbi = rbiInput;
+        if (!offense && erInput) pa.er = erInput;
 
-      // 寫入結果與附加欄位
-      pa.result = res;
-      pa.outsAdded = outsOf(res);
-      if (offense && rbiInput) pa.rbi = rbiInput;
-      if (!offense && erInput)  pa.er  = erInput;
+        // ✅ 出局數夾在 0~3，並收窄型別為 0|1|2|3
+        const newOuts = Math.max(0, Math.min(3, (half.outs ?? 0) + pa.outsAdded)) as 0 | 1 | 2 | 3;
+        half.outs = newOuts;
+        shouldAdvanceHalf = newOuts >= 3;
 
-      // 累出局
-   const newOuts = Math.max(0, Math.min(3, (half.outs ?? 0) + pa.outsAdded)) as 0 | 1 | 2 | 3;
-half.outs = newOuts;
-
-        shouldAdvanceHalf = half.outs >= 3;
-
-      // 進攻半局：換下一棒
-      if (offense) {
-        const len = lineupPids.length || 9;
-        (nx as any)[batterIdxKey] = ((nextIdx + 1) % len);
-      }
-
-      return nx;
-    }));
+        // 進攻半局：自動換下一棒
+        if (offense) {
+          const len = lineupPids.length || 9;
+          (nx as any)[batterIdxKey] = (nextIdx + 1) % len;
+        }
+        return nx;
+      })
+    );
 
     // 重置附加輸入
     if (offense) setRbiInput(0); else setErInput(0);
+    // 三出局自動換下一半局
     if (shouldAdvanceHalf) setStep(s => s + 1);
   };
 
-  // 當前半局的 UI 狀態（只讀）
+  // 目前半局（渲染用）
   const curHalf = (() => {
     const gg: any = g as any;
     if (!gg.inningsEvents || !gg.inningsEvents[inningIdx]) {
-      return { outs: 0, pitcherId: undefined } as HalfInningEvent;
+      return { outs: 0, pitcherId: undefined, pas: [] } as HalfInningEvent;
     }
     return isTop ? gg.inningsEvents[inningIdx].top : gg.inningsEvents[inningIdx].bot;
   })();
-
   const outsDisp = "●".repeat(curHalf.outs || 0) + "○".repeat(3 - (curHalf.outs || 0));
   const curPitcherName = curHalf.pitcherId ? nameOf(curHalf.pitcherId) : "";
 
@@ -1521,20 +1524,20 @@ half.outs = newOuts;
           <span className="text-sm text-slate-600">出局：{outsDisp}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => Math.max(0, s - 1))}>上一半局</button>
-         <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => s + 1)}>下一半局</button>
+          <button type="button" className="text-xs px-2 py-1 border rounded"
+                  onClick={() => setStep(s => Math.max(0, s - 1))}>上一半局</button>
+          <button type="button" className="text-xs px-2 py-1 border rounded"
+                  onClick={() => setStep(s => s + 1)}>下一半局</button>
         </div>
       </div>
 
-      {/* 投手選擇（防守半局） */}
+      {/* 投手（僅防守半局需要） */}
       {!offense && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm">投手：</div>
-          <select
-            className="text-sm border rounded px-2 py-1"
-            value={curHalf.pitcherId || 0}
-            onChange={(e) => setPitcher(Number(e.target.value))}
-          >
+          <select className="text-sm border rounded px-2 py-1"
+                  value={curHalf.pitcherId || 0}
+                  onChange={(e) => setPitcher(Number(e.target.value))}>
             <option value={0}>（選擇投手）</option>
             {pitcherOptions.map(pid => (
               <option key={pid} value={pid}>{nameOf(pid)}</option>
@@ -1544,7 +1547,7 @@ half.outs = newOuts;
         </div>
       )}
 
-      {/* 當局打者（進攻半局） */}
+      {/* 當局打者（進攻半局顯示） */}
       {offense && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm">打者：</div>
@@ -1562,10 +1565,9 @@ half.outs = newOuts;
       {/* 逐球：B / S / F */}
       <div className="flex items-center gap-2">
         <div className="text-sm w-16">逐球：</div>
-      
- <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("B")}>B</button>
- <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("S")}>S</button>
- <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("F")}>F</button>
+        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("B")}>B</button>
+        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("S")}>S</button>
+        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("F")}>F</button>
         <div className="text-xs text-slate-500">（每按一球會累計 PC）</div>
       </div>
 
@@ -1574,12 +1576,14 @@ half.outs = newOuts;
         {offense ? (
           <label className="text-sm flex items-center gap-2">
             RBI：
-            <input type="number" min={0} className="w-20 border rounded px-2 py-1" value={rbiInput} onChange={e => setRbiInput(Number(e.target.value) || 0)} />
+            <input type="number" min={0} className="w-20 border rounded px-2 py-1"
+                   value={rbiInput} onChange={e => setRbiInput(Number(e.target.value) || 0)} />
           </label>
         ) : (
           <label className="text-sm flex items-center gap-2">
             ER（自責）：
-            <input type="number" min={0} className="w-20 border rounded px-2 py-1" value={erInput} onChange={e => setErInput(Number(e.target.value) || 0)} />
+            <input type="number" min={0} className="w-20 border rounded px-2 py-1"
+                   value={erInput} onChange={e => setErInput(Number(e.target.value) || 0)} />
           </label>
         )}
       </div>
@@ -1588,31 +1592,32 @@ half.outs = newOuts;
       <div className="space-y-2">
         <div className="text-sm">打席結果：</div>
         <div className="grid grid-cols-8 gap-2">
-          {/* 安打與保送 */}
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("1B")}>1B</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("2B")}>2B</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("3B")}>3B</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("HR")}>HR</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("BB")}>BB</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("IBB")}>IBB</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("HBP")}>HBP</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("SO")}>K</button>
+          {/* 安打＆保送 */}
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("1B")}>1B</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("2B")}>2B</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("3B")}>3B</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("HR")}>HR</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("BB")}>BB</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("IBB")}>IBB</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("HBP")}>HBP</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("SO")}>K</button>
 
           {/* 出局型態 */}
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("GO")}>GO</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("FO")}>FO</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("SF")}>SF</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("SH")}>SH</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("DP")}>DP</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("TP")}>TP</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("CS")}>CS</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("E")}>E</button>
-          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("FC")}>FC</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("GO")}>GO</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("FO")}>FO</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("SF")}>SF</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("SH")}>SH</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("DP")}>DP</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("TP")}>TP</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("CS")}>CS</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("E")}>E</button>
+          <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("FC")}>FC</button>
         </div>
       </div>
     </div>
   );
 };
+
 
 
   
