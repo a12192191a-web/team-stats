@@ -214,7 +214,7 @@ type Game = {
 ========================================================= */
 const MLB_POSITIONS = ["P","C","1B","2B","3B","SS","LF","CF","RF","DH"];
 const HANDS: Array<"R"|"L"|"S"> = ["R","L","S"];
-
+const DEF_POS = ["P","C","1B","2B","3B","SS","LF","CF","RF"];
 const STORAGE = {
   players: "rsbm.players.v2",
   games:   "rsbm.games.v2",
@@ -878,36 +878,41 @@ const addGame = () => {
   };
 
   /* ---------------- 守備 9×9 ---------------- */
-  const setDefense = (gid: number, inningIdx: number, posIdx: number, pid: number) => {
-    setGames(prev => prev.map(g => {
-      if (g.id !== gid) return g;
-      const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
-      if (!grid[inningIdx]) grid[inningIdx] = Array(9).fill(0);
-      grid[inningIdx][posIdx] = pid || 0;
-      return { ...g, defense: grid };
-    }));
-  };
+const setDefense = (gid: number, inningIdx: number, posIdx: number, pid: number) => {
+  setGames(prev => prev.map(g => {
+    if (g.id !== gid) return g;
+    const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
+    if (!grid[inningIdx]) grid[inningIdx] = Array(9).fill(0);
+
+    // 嚴格驗證：只能放入該位置有勾選的球員
+    const posName = DEF_POS[posIdx];
+    if (pid) {
+      const info = getNameAndPositions(players, g, pid);
+      const ok = (info?.positions || []).includes(posName);
+      if (!ok) {
+        alert(`此球員未在新增時勾選「${posName}」，不可填入該位置。`);
+        return g;
+      }
+    }
+
+    grid[inningIdx][posIdx] = pid || 0;
+    return { ...g, defense: grid };
+  }));
+};
   const copyDefenseRow = (gid: number, inningIdx: number) => {
-    setGames(prev => prev.map(g => {
-      if (g.id !== gid || inningIdx <= 0) return g;
-      const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
-      grid[inningIdx] = [...grid[inningIdx - 1]];
-      return { ...g, defense: grid };
-    }));
-  };
-  const clearDefenseRow = (gid: number, idx: number) => {
-    setGames(prev => prev.map(g => g.id === gid ? { ...g, defense: (g.defense||Array.from({ length: 9 }, () => Array(9).fill(0))).map((row,i)=> i===idx? Array(9).fill(0): row) } : g));
-  };
-  const clearDefenseAll = (gid: number) => {
-    setGames(prev => prev.map(g => g.id === gid ? { ...g, defense: Array.from({ length: 9 }, () => Array(9).fill(0)) } : g));
-  };
-  const pidToName = (g: Game, pid: number) => {
-    if (!pid) return "";
-    const p = players.find(x => x.id === pid);
-    if (p) return p.name;
-    const snap = g.roster?.[pid];
-    return snap ? snap.name : `#${pid}`;
-  };
+  setGames(prev => prev.map(g => {
+    if (g.id !== gid || inningIdx <= 0) return g;
+    const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
+    const prevRow = grid[inningIdx - 1] ?? Array(9).fill(0);
+    // 逐格過濾：不符合該守位的球員直接清空
+    grid[inningIdx] = prevRow.map((pid, c) => {
+      if (!pid) return 0;
+      const info = getNameAndPositions(players, g, Number(pid));
+      return (info?.positions || []).includes(DEF_POS[c]) ? Number(pid) : 0;
+    });
+    return { ...g, defense: grid };
+  }));
+};
 
 
   /* ---------------- 換人機制 ---------------- */
@@ -1728,54 +1733,116 @@ return (
 
           {/* 守備位置逐局（9×9） */}
           <div className="border rounded p-2">
-            <div className="font-semibold mb-2">守備位置逐局</div>
-            <div className="overflow-x-auto">
-              <table className="border text-xs md:text-sm w-full">
-                <thead>
-                  <tr>
-                    <th className="border px-2 py-1 text-center">局\位</th>
-                    {["P","C","1B","2B","3B","SS","LF","CF","RF"].map((pos) => (
-                      <th key={pos} className="border px-2 py-1 text-center">{pos}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: 9 }).map((_, r) => (
-                    <tr key={r}>
-                      <td className="border px-2 py-1 text-center">{r+1}</td>
-                      {Array.from({ length: 9 }).map((_, c) => {
-                        const pid = (g.defense?.[r]?.[c] ?? 0) || 0;
-                        return (
-                          <td key={c} className="border px-1 py-1">
-                            {g.locked ? (
-                              <span className="text-xs">{pidToName(g, pid) || "-"}</span>
-                            ) : (
-                              <select
-                                className="w-full border rounded px-1 py-1 text-xs"
-                                value={pid || 0}
-                                onChange={(e) => setDefense(g.id, r, c, Number(e.target.value)||0)}
-                              >
-                                <option value={0}>（空）</option>
-                                {g.lineup.map(pid => (
-                                  <option key={pid} value={pid}>{pidToName(g, pid)}</option>
-                                ))}
-                              </select>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!g.locked && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => copyDefenseRow(g.id, 1)}>複製上一局（2→1 無效）</button>
-                <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => clearDefenseAll(g.id)}>全部清空</button>
-              </div>
-            )}
+           {/* 守備位置逐局（9×9） */}
+<div className="border rounded p-2">
+  {(() => {
+    const collapsedArr = getDefCollapseArr(g.id);
+    return (
+      <>
+        <div className="flex items-center justify-between mb-2">
+          <div className="font-semibold">守備位置逐局</div>
+          <div className="flex gap-2">
+            <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => setAllDefRows(g.id, true)}>全部收起</button>
+            <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => setAllDefRows(g.id, false)}>全部展開</button>
           </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="border text-xs md:text-sm w-full">
+            <thead>
+              <tr>
+                <th className="border px-2 py-1 text-center">局\位</th>
+                {DEF_POS.map((pos) => (
+                  <th key={pos} className="border px-2 py-1 text-center">{pos}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 9 }).map((_, r) => {
+                const row = (g.defense?.[r] ?? Array(9).fill(0));
+                const collapsed = collapsedArr[r];
+
+                if (collapsed) {
+                  const filled = row.filter((x: number) => !!x).length;
+                  const summary = DEF_POS
+                    .map((pos, c) => {
+                      const pid = row[c] || 0;
+                      const name = pidToName(g, pid);
+                      return name ? `${pos}:${name}` : null;
+                    })
+                    .filter(Boolean)
+                    .slice(0, 6)
+                    .join("、");
+
+                  return (
+                    <tr key={r}>
+                      <td className="border px-2 py-1 text-center align-top">
+                        {r + 1}
+                        <button className="ml-2 text-xs underline" onClick={() => toggleDefRow(g.id, r, false)}>展開</button>
+                      </td>
+                      <td className="border px-2 py-1 text-gray-600" colSpan={9}>
+                        已填 {filled}/9 {summary ? `（${summary}）` : ""}
+                        {!g.locked && (
+                          <span className="ml-2 inline-flex gap-1">
+                            <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-0.5 rounded" onClick={() => copyDefenseRow(g.id, r)}>複製上一局</button>
+                            <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-0.5 rounded" onClick={() => clearDefenseRow(g.id, r)}>清空</button>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return (
+                  <tr key={r}>
+                    <td className="border px-2 py-1 text-center align-top">
+                      {r + 1}
+                      <button className="ml-2 text-xs underline" onClick={() => toggleDefRow(g.id, r, true)}>收起</button>
+                      {!g.locked && (
+                        <>
+                          <button className="ml-1 text-xs bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded" onClick={() => copyDefenseRow(g.id, r)}>複製上一局</button>
+                          <button className="ml-1 text-xs bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded" onClick={() => clearDefenseRow(g.id, r)}>清空</button>
+                        </>
+                      )}
+                    </td>
+
+                    {Array.from({ length: 9 }).map((_, c) => {
+                      const rawPid = (row[c] ?? 0) || 0;
+                      const allowedIds = g.lineup.filter(pid0 =>
+                        (getNameAndPositions(players, g, pid0).positions || []).includes(DEF_POS[c])
+                      );
+                      const value = allowedIds.includes(rawPid) ? rawPid : 0;
+
+                      return (
+                        <td key={c} className="border px-1 py-1">
+                          {g.locked ? (
+                            <span className="text-xs">{pidToName(g, value) || "-"}</span>
+                          ) : (
+                            <select
+                              className="w-full border rounded px-1 py-1 text-xs"
+                              value={value}
+                              onChange={(e) => setDefense(g.id, r, c, Number(e.target.value) || 0)}
+                            >
+                              <option value={0}>（空）</option>
+                              {allowedIds.map(pid => (
+                                <option key={pid} value={pid}>{pidToName(g, pid)}</option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  })()}
+</div>
+
     
           {/* 換人紀錄 */}
           {(g.subs?.length ?? 0) > 0 && (
