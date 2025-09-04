@@ -89,7 +89,7 @@ const buildLabel = (() => {
   } catch { return ""; }
 })();
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
@@ -213,7 +213,6 @@ type Game = {
    常數 / Helper
 ========================================================= */
 const MLB_POSITIONS = ["P","C","1B","2B","3B","SS","LF","CF","RF","DH"];
-const DEF_POS = ["P","C","1B","2B","3B","SS","LF","CF","RF"];
 const HANDS: Array<"R"|"L"|"S"> = ["R","L","S"];
 
 const STORAGE = {
@@ -535,6 +534,38 @@ useFloatingCheckUpdateButton(hardRefresh);
   useDebouncedLocalStorage(STORAGE.games,   games,   400);
   useDebouncedLocalStorage(STORAGE.compare, compare, 400);
 
+  // ---- 逐局守備「收合」狀態（UI 專用，不入存檔） ----
+  // 以比賽 id (gid) 為 key，value 是 9 個布林值陣列；true=收起、false=展開
+  const [defCollapsed, setDefCollapsed] = useState<Record<number, boolean[]>>({});
+
+  // 取得某場的收合陣列；預設全收起
+  const getDefCollapseArr = (gid: number) => defCollapsed[gid] ?? Array(9).fill(true);
+
+  // 切換單一局的收合狀態；next 不給就反轉
+  const toggleDefRow = (gid: number, idx: number, next?: boolean) => {
+    setDefCollapsed(prev => {
+      const base = prev[gid] ?? Array(9).fill(true);
+      const arr = base.slice();
+      arr[idx] = next ?? !arr[idx];
+      return { ...prev, [gid]: arr };
+    });
+  };
+
+  // 一鍵全部展開 / 收起（單一場）
+  const setAllDefRows = (gid: number, folded: boolean) => {
+    setDefCollapsed(prev => ({ ...prev, [gid]: Array(9).fill(folded) }));
+  };
+
+  // 全部展開/收起（跨所有已初始化過的比賽）
+  const setAllDefRowsGlobal = (folded: boolean) => {
+    setDefCollapsed(prev => {
+      const next: Record<number, boolean[]> = {};
+      for (const k of Object.keys(prev)) next[Number(k)] = Array(9).fill(folded);
+      return next;
+    });
+  };
+
+
   /* ---------------- 雲端同步 ---------------- */
 
 
@@ -847,61 +878,28 @@ const addGame = () => {
   };
 
   /* ---------------- 守備 9×9 ---------------- */
-  
   const setDefense = (gid: number, inningIdx: number, posIdx: number, pid: number) => {
     setGames(prev => prev.map(g => {
       if (g.id !== gid) return g;
       const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
       if (!grid[inningIdx]) grid[inningIdx] = Array(9).fill(0);
-      const posName = DEF_POS[posIdx];
-      if (pid) {
-        const info = getNameAndPositions(players, g, pid);
-        const allowed = (info?.positions || []).includes(posName);
-        if (!allowed) {
-          alert(`此球員未在新增時勾選「${'${posName}'}」，不可填入該位置。`);
-          return g;
-        }
-      }
       grid[inningIdx][posIdx] = pid || 0;
       return { ...g, defense: grid };
     }));
   };
-
-  
   const copyDefenseRow = (gid: number, inningIdx: number) => {
     setGames(prev => prev.map(g => {
       if (g.id !== gid || inningIdx <= 0) return g;
       const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
-      const prevRow = grid[inningIdx - 1] || Array(9).fill(0);
-      grid[inningIdx] = prevRow.map((pid, c) => {
-        if (!pid) return 0;
-        const info = getNameAndPositions(players, g, pid);
-        const ok = (info?.positions || []).includes(DEF_POS[c]);
-        return ok ? pid : 0;
-      });
+      grid[inningIdx] = [...grid[inningIdx - 1]];
       return { ...g, defense: grid };
     }));
   };
-
   const clearDefenseRow = (gid: number, idx: number) => {
     setGames(prev => prev.map(g => g.id === gid ? { ...g, defense: (g.defense||Array.from({ length: 9 }, () => Array(9).fill(0))).map((row,i)=> i===idx? Array(9).fill(0): row) } : g));
   };
   const clearDefenseAll = (gid: number) => {
     setGames(prev => prev.map(g => g.id === gid ? { ...g, defense: Array.from({ length: 9 }, () => Array(9).fill(0)) } : g));
-  };
-
-  // ---- 守備逐局收合狀態（UI 專用，不入存檔） ----
-  const getDefCollapseArr = (gid: number) => defCollapsed[gid] ?? Array(9).fill(true);
-  const toggleDefRow = (gid: number, idx: number, next?: boolean) => {
-    setDefCollapsed(prev => {
-      const base = prev[gid] ?? Array(9).fill(true);
-      const arr = base.slice();
-      arr[idx] = (next === undefined) ? !arr[idx] : !!next;
-      return { ...prev, [gid]: arr };
-    });
-  };
-  const setAllDefRows = (gid: number, flag: boolean) => {
-    setDefCollapsed(prev => ({ ...prev, [gid]: Array(9).fill(flag) }));
   };
   const pidToName = (g: Game, pid: number) => {
     if (!pid) return "";
@@ -1730,7 +1728,7 @@ return (
 
           {/* 守備位置逐局（9×9） */}
           <div className="border rounded p-2">
-            <div className="font-semibold mb-2 flex items-center gap-2">守備位置逐局{!g.locked && <><button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => setAllDefRows(g.id, false)}>全部展開</button><button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => setAllDefRows(g.id, true)}>全部收起</button></>}</div>
+            <div className="font-semibold mb-2">守備位置逐局</div>
             <div className="overflow-x-auto">
               <table className="border text-xs md:text-sm w-full">
                 <thead>
@@ -1741,84 +1739,39 @@ return (
                     ))}
                   </tr>
                 </thead>
-                
-              <tbody>
-                {Array.from({ length: 9 }).map((_, r) => {
-                  const collapseArr = getDefCollapseArr(g.id);
-                  const collapsed = collapseArr[r];
-                  const filledCnt = (g.defense?.[r] ?? []).filter((x) => x && x>0).length;
-                  return (
-                    <Fragment key={r}>
-                      <tr className="bg-slate-50">
-                        <td className="border px-2 py-1 text-left" colSpan={10}>
-                          <span className="font-semibold mr-2">{r+1} 局</span>
-                          <span className="text-xs text-slate-600 mr-3">已填 {filledCnt}/9</span>
-                          <button
-                            className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-0.5 rounded mr-2"
-                            onClick={() => toggleDefRow(g.id, r)}
-                          >
-                            {collapsed ? "展開" : "收起"}
-                          </button>
-                          {!g.locked && (
-                            <>
-                              <button
-                                className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-0.5 rounded mr-2"
-                                onClick={() => copyDefenseRow(g.id, r)}
-                                disabled={r === 0}
-                                title={r===0 ? "第 1 局無上一局" : "複製上一局（自動過濾不相容位置）"}
+                <tbody>
+                  {Array.from({ length: 9 }).map((_, r) => (
+                    <tr key={r}>
+                      <td className="border px-2 py-1 text-center">{r+1}</td>
+                      {Array.from({ length: 9 }).map((_, c) => {
+                        const pid = (g.defense?.[r]?.[c] ?? 0) || 0;
+                        return (
+                          <td key={c} className="border px-1 py-1">
+                            {g.locked ? (
+                              <span className="text-xs">{pidToName(g, pid) || "-"}</span>
+                            ) : (
+                              <select
+                                className="w-full border rounded px-1 py-1 text-xs"
+                                value={pid || 0}
+                                onChange={(e) => setDefense(g.id, r, c, Number(e.target.value)||0)}
                               >
-                                複製上一局
-                              </button>
-                              <button
-                                className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-0.5 rounded"
-                                onClick={() => clearDefenseRow(g.id, r)}
-                              >
-                                清空本局
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                      {!collapsed && (
-                        <tr>
-                          <td className="border px-2 py-1 text-center">{r+1}</td>
-                          {Array.from({ length: 9 }).map((_, c) => {
-                            const pidRaw = (g.defense?.[r]?.[c] ?? 0) || 0;
-                            const allowedIds = g.lineup.filter(pid0 => {
-                              const info = getNameAndPositions(players, g, pid0);
-                              return (info?.positions || []).includes(DEF_POS[c]);
-                            });
-                            const value = allowedIds.includes(pidRaw) ? pidRaw : 0;
-                            return (
-                              <td key={c} className="border px-1 py-1">
-                                {g.locked ? (
-                                  <span className="text-xs">{pidToName(g, value) || "-"}</span>
-                                ) : (
-                                  <select
-                                    className="w-full border rounded px-1 py-1 text-xs"
-                                    value={value}
-                                    onChange={(e) => setDefense(g.id, r, c, Number(e.target.value)||0)}
-                                  >
-                                    <option value={0}>（空）</option>
-                                    {allowedIds.map(pid => (
-                                      <option key={pid} value={pid}>{pidToName(g, pid)}</option>
-                                    ))}
-                                  </select>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-
+                                <option value={0}>（空）</option>
+                                {g.lineup.map(pid => (
+                                  <option key={pid} value={pid}>{pidToName(g, pid)}</option>
+                                ))}
+                              </select>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
             {!g.locked && (
               <div className="flex flex-wrap gap-2 mt-2">
+                <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => copyDefenseRow(g.id, 1)}>複製上一局（2→1 無效）</button>
                 <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => clearDefenseAll(g.id)}>全部清空</button>
               </div>
             )}
