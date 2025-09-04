@@ -533,28 +533,28 @@ useFloatingCheckUpdateButton(hardRefresh);
   useDebouncedLocalStorage(STORAGE.players, players, 400);
   useDebouncedLocalStorage(STORAGE.games,   games,   400);
   useDebouncedLocalStorage(STORAGE.compare, compare, 400);
+// ---- 逐局守備「收合」狀態（UI 專用，不入存檔） ----
+// 以比賽 id (gid) 為 key，value 是 9 個布林值陣列；true=收起、false=展開
+const [defCollapsed, setDefCollapsed] = useState<Record<number, boolean[]>>({});
 
-  // ---- 逐局守備「收合」狀態（UI 專用，不入存檔） ----
-  // 以比賽 id (gid) 為 key，value 是 9 個布林值陣列；true=收起、false=展開
-  const [defCollapsed, setDefCollapsed] = useState<Record<number, boolean[]>>({});
+// 取得某場的收合陣列；預設全收起
+const getDefCollapseArr = (gid: number) => defCollapsed[gid] ?? Array(9).fill(true);
 
-  // 取得某場的收合陣列；預設全收起
-  const getDefCollapseArr = (gid: number) => defCollapsed[gid] ?? Array(9).fill(true);
+// 切換單一局的收合狀態；next 不給就反轉
+const toggleDefRow = (gid: number, idx: number, next?: boolean) => {
+  setDefCollapsed(prev => {
+    const base = prev[gid] ?? Array(9).fill(true);
+    const arr = base.slice();
+    arr[idx] = next ?? !arr[idx];
+    return { ...prev, [gid]: arr };
+  });
+};
 
-  // 切換單一局的收合狀態；next 不給就反轉
-  const toggleDefRow = (gid: number, idx: number, next?: boolean) => {
-    setDefCollapsed(prev => {
-      const base = prev[gid] ?? Array(9).fill(true);
-      const arr = base.slice();
-      arr[idx] = next ?? !arr[idx];
-      return { ...prev, [gid]: arr };
-    });
-  };
+// 一鍵全部展開 / 收起（單一場）
+const setAllDefRows = (gid: number, folded: boolean) => {
+  setDefCollapsed(prev => ({ ...prev, [gid]: Array(9).fill(folded) }));
+};
 
-  // 一鍵全部展開 / 收起（單一場）
-  const setAllDefRows = (gid: number, folded: boolean) => {
-    setDefCollapsed(prev => ({ ...prev, [gid]: Array(9).fill(folded) }));
-  };
 
   // 全部展開/收起（跨所有已初始化過的比賽）
   const setAllDefRowsGlobal = (folded: boolean) => {
@@ -863,19 +863,23 @@ const addGame = () => {
     const tpl: LineupTemplate = { id: Date.now(), name, lineup: [...g.lineup] };
     setTemplates(prev => [tpl, ...prev]);
   };
-  const applyTemplateToGame = (g: Game, tid: number) => {
-    const tpl = templates.find(t => t.id === tid);
-    if (!tpl) return;
-    const valid = tpl.lineup.filter(pid => players.some(p => p.id === pid)).slice(0, 9);
-    setGames(prev => prev.map(x => x.id === g.id ? { ...x, lineup: valid, stats: { ...x.stats, ...Object.fromEntries(valid.map(pid => [pid, x.stats[pid] ?? emptyTriple()])) } } : x));
-  };
-  const copyLastLineupToGame = (g: Game) => {
-    const others = games.filter(x => x.id !== g.id && x.lineup?.length);
-    if (!others.length) return alert("找不到上一場有打線的比賽。");
-    const last = [...others].sort((a,b) => (b.date||"").localeCompare(a.date||"") || b.id - a.id)[0];
-    const valid = last.lineup.filter(pid => players.some(p => p.id === pid)).slice(0, 9);
-    setGames(prev => prev.map(x => x.id === g.id ? { ...x, lineup: valid, stats: { ...x.stats, ...Object.fromEntries(valid.map(pid => [pid, x.stats[pid] ?? emptyTriple()])) } } : x));
-  };
+  const clearDefenseRow = (gid: number, idx: number) => {
+  setGames(prev => prev.map(g => {
+    if (g.id !== gid) return g;
+    const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
+    grid[idx] = Array(9).fill(0);
+    return { ...g, defense: grid };
+  }));
+};
+
+const clearDefenseAll = (gid: number) => {
+  setGames(prev => prev.map(g => {
+    if (g.id !== gid) return g;
+    const grid = Array.from({ length: 9 }, () => Array(9).fill(0));
+    return { ...g, defense: grid };
+  }));
+};
+
 
   /* ---------------- 守備 9×9 ---------------- */
 const setDefense = (gid: number, inningIdx: number, posIdx: number, pid: number) => {
@@ -899,7 +903,8 @@ const setDefense = (gid: number, inningIdx: number, posIdx: number, pid: number)
     return { ...g, defense: grid };
   }));
 };
-  const copyDefenseRow = (gid: number, inningIdx: number) => {
+
+const copyDefenseRow = (gid: number, inningIdx: number) => {
   setGames(prev => prev.map(g => {
     if (g.id !== gid || inningIdx <= 0) return g;
     const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
@@ -1421,7 +1426,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
                   const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
                   return (
                     <tr key={pid}>
-                      <td className="border px-2 py-1">{pidToName(g, pid) || "-"}</td>
+                      <td className="border px-2 py-1">{ pidToName(g, pid) || "-"}</td>
                       {["PO","A","E"].map((stat) => (
                         <td key={stat} className="border px-2 py-1 text-center">
                           {g.locked ? toNonNegNum((cur.fielding as any)[stat]) : (
@@ -1726,14 +1731,10 @@ return (
               </DragDropContext>
             </div>
           </div>
-
-          {/* 逐局（單半局）輸入 — 僅在逐局模式顯示 */}
           {g.mode === "inning" && <HalfStepper g={g} />}
 
 
-          {/* 守備位置逐局（9×9） */}
-          <div className="border rounded p-2">
-           {/* 守備位置逐局（9×9） */}
+{/* 守備位置逐局（9×9） */}
 <div className="border rounded p-2">
   {(() => {
     const collapsedArr = getDefCollapseArr(g.id);
@@ -1842,6 +1843,7 @@ return (
     );
   })()}
 </div>
+
 
     
           {/* 換人紀錄 */}
