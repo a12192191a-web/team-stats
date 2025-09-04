@@ -924,6 +924,33 @@ const copyDefenseRow = (gid: number, inningIdx: number) => {
     return { ...g, defense: grid };
   }));
 };
+// 從上一場比賽複製「打線」到目前這場（不動守備/數據）
+const copyLastLineupToGame = (cur: Game) => {
+  setGames(prev => {
+    if (!prev || prev.length === 0) return prev;
+
+    // 先找目前這場在陣列中的索引
+    const idx = prev.findIndex(g => g.id === cur.id);
+
+    // 往前找上一場「有打線」的比賽
+    let src: Game | undefined;
+    for (let i = idx - 1; i >= 0; i--) {
+      const g0 = prev[i];
+      if (g0?.lineup && g0.lineup.length > 0) { src = g0; break; }
+    }
+    if (!src) {
+      alert("找不到上一場有打線的比賽");
+      return prev;
+    }
+
+    // 只複製 lineup；不動 defense、投手、各種統計
+    return prev.map(g => {
+      if (g.id !== cur.id) return g;
+      const lineup = [...(src!.lineup ?? [])];
+      return { ...g, lineup };
+    });
+  });
+};
 
 
   /* ---------------- 換人機制 ---------------- */
