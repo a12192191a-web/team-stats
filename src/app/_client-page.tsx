@@ -207,6 +207,58 @@ type Game = {
   subs?: { inning: number; posIndex: number; outPid: number; inPid: number }[];
   defense?: DefenseGrid;
 };
+// ---- 事件流：逐球 / 打席結果（不動舊資料）----
+
+// 球種（可擴充）
+type PitchMark = "S" | "B" | "F"; // 好球/壞球/界外
+
+// 打席結果（可擴充）
+type PAResult =
+  | "1B" | "2B" | "3B" | "HR"
+  | "BB" | "IBB" | "HBP"
+  | "SO" | "GO" | "FO"
+  | "SF" | "SH"
+  | "DP" | "TP"
+  | "CS" | "SB"
+  | "E"  | "FC";
+
+// 一個打席
+type PlateAppearance = {
+  batterId: number;       // 我方進攻時：目前打者；防守時：0（不記對手打者）
+  pitcherId: number;      // 防守半局必有；進攻半局可為 0
+  pitches: PitchMark[];   // 逐球
+  result: PAResult | null;
+  rbi?: number;           // 打點（你要求手動）
+  er?: number;            // 自責（你要求手動，記在投手名下）
+  outsAdded: 0 | 1 | 2 | 3;
+  ts?: number;            // 時間戳（可選）
+};
+
+// 一個半局
+type HalfInningEvent = {
+  outs: 0 | 1 | 2 | 3;
+  pitcherId?: number;     // 防守半局必填
+  pas: PlateAppearance[];
+};
+
+// 一局（上/下）
+type InningEvent = { top: HalfInningEvent; bot: HalfInningEvent };
+
+// 打席是否算 AB（MLB 規則）
+const isAB = (r: PAResult) => !["BB", "IBB", "HBP", "SF", "SH"].includes(r);
+
+// 結果 -> 出局數映射
+const outsOf = (r: PAResult): 0 | 1 | 2 | 3 =>
+  r === "DP" ? 2 :
+  r === "TP" ? 3 :
+  (["SO", "GO", "FO", "SF", "SH", "CS"].includes(r) ? 1 : 0);
+
+// 小工具：顯示投手 IP（以出局數表示的整數 → x.x）
+const formatIP = (outs: number) => {
+  const ipInt = Math.floor(outs / 3);
+  const rem = outs % 3;
+  return `${ipInt}.${rem}`;
+};
 
 
 /* =========================================================
@@ -1295,268 +1347,268 @@ function isOffenseHalfSimple(g: Game, isTop: boolean) {
 }
 
 /* 單半局步進式輸入（守備半局＝當局投手數據＋全員守備；攻擊半局＝打擊＋跑壘） */
+// ---- 事件版 HalfStepper（逐球＋結果按鈕）----
 const HalfStepper = ({ g }: { g: Game }) => {
-  const [step, setStep] = useState(0);                  // 0..(9*2-1)
+  // 你原本就有的 state／工具：盡量沿用
+  const [step, setStep] = useState(0);                     // 0=1上,1=1下,2=2上...
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
-  const offense = isOffenseHalfSimple(g, isTop);
-  // 先攻時要用到的打線與當局打者
-const lineupPids = (g.lineup || []).filter(Boolean);
-const [batterIdx, setBatterIdx] = useState(0); // 0..8 對應 1~9 棒
-useEffect(() => { if (!offense) setBatterIdx(0); }, [offense, g.id]);
 
-const curPid = lineupPids[batterIdx] || 0;
-const curName = curPid ? pidToName(g, curPid) : "";
+  // 先攻/先守 判定：專案裡原本有 isOffenseHalfSimple，就沿用；沒有就用 isTop 當預設
+  const offense = typeof (isOffenseHalfSimple) === "function"
+    ? isOffenseHalfSimple(g, isTop)
+    : isTop;
 
+  // 打線與目前打者指標（各半局獨立循環）
+  const lineupPids = (g.lineup || []).filter(Boolean);
+  const batterIdxKey = isTop ? "nextBatterIdxTop" : "nextBatterIdxBot";
+  const nextIdx = (g as any)[batterIdxKey] ?? 0;
+  const curBatterId = offense ? (lineupPids[nextIdx] || 0) : 0;
 
-  const pCandidates = g.lineup.filter(pid => (getNameAndPositions(players, g, pid).positions || []).includes("P"));
-  const [pitcherPid, setPitcherPidLocal] = useState<number | ''>(pCandidates[0] ?? '');
-  useEffect(() => {
-    if (pCandidates.length && !pCandidates.includes(Number(pitcherPid))) {
-      setPitcherPidLocal(pCandidates[0]);
+  // 當局輸入：RBI（進攻用）、ER（防守用）
+  const [rbiInput, setRbiInput] = useState(0);
+  const [erInput,  setErInput ] = useState(0);
+
+  // 取名工具（專案既有 getNameAndPositions / players）
+  const nameOf = (pid?: number) => {
+    if (!pid) return "";
+    const info = getNameAndPositions(players, g, pid);
+    return info?.name ?? "";
+  };
+
+  // 建立/確保 inningsEvents 結構
+  const ensureInningsEvents = (gg: any, upto: number) => {
+    gg.inningsEvents = gg.inningsEvents ?? [];
+    while (gg.inningsEvents.length <= upto) {
+      gg.inningsEvents.push({
+        top: { outs: 0, pitcherId: undefined, pas: [] },
+        bot: { outs: 0, pitcherId: undefined, pas: [] },
+      });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [g.lineup.join(","), step]);
+  };
 
-  const prev = () => setStep(s => Math.max(0, s - 1));
-  const next = () => setStep(s => Math.min(9*2 - 1, s + 1));
+  // 取得當前半局（以 setGames 時間點為準）
+  const getHalf = (gg: any, idx: number, top: boolean) =>
+    (top ? gg.inningsEvents[idx].top : gg.inningsEvents[idx].bot) as HalfInningEvent;
+
+  // 挑投手名單：先列出能守 P 的球員，若沒有就列打線所有人（避免沒人可選）
+  const pitcherOptions = (() => {
+    const list = (g.lineup || []).filter(pid => {
+      const pos = (getNameAndPositions(players, g, pid)?.positions || []);
+      return pos.includes("P");
+    });
+    return list.length ? list : (g.lineup || []);
+  })();
+
+  // 設定/更換投手（只影響當前半局）
+  const setPitcher = (pid: number) => {
+    setGames(prev => prev.map(gg => {
+      if (gg.id !== g.id) return gg;
+      const nx: any = { ...gg };
+      ensureInningsEvents(nx, inningIdx);
+      const half = getHalf(nx, inningIdx, !offense); // 防守半局才需要投手
+      half.pitcherId = pid || undefined;
+      return nx;
+    }));
+  };
+
+  // 逐球：B / S / F
+  const addPitch = (mark: PitchMark) => {
+    let ok = false;
+    setGames(prev => prev.map(gg => {
+      if (gg.id !== g.id) return gg;
+      const nx: any = { ...gg };
+      ensureInningsEvents(nx, inningIdx);
+      const half = getHalf(nx, inningIdx, isTop);
+
+      // 防守半局，沒有投手就不能記球
+      if (!offense && !half.pitcherId) return nx;
+
+      // 取得/建立當前 PA（若上一個 PA 已有 result，開新 PA）
+      const batterId = curBatterId;
+      let pa = half.pas[half.pas.length - 1];
+      if (!pa || pa.result !== null) {
+        pa = {
+          batterId,
+          pitcherId: half.pitcherId || 0,
+          pitches: [],
+          result: null,
+          outsAdded: 0,
+          ts: Date.now(),
+        };
+        half.pas.push(pa);
+      }
+      pa.pitches.push(mark);
+      ok = true;
+      return nx;
+    }));
+    if (!ok && !offense) alert("請先選擇當局投手");
+  };
+
+  // 提交打席結果（K/BB/1B/2B/...），並處理出局與換半局/換打者
+  const commitResult = (res: PAResult) => {
+    let shouldAdvanceHalf = false;
+    setGames(prev => prev.map(gg => {
+      if (gg.id !== g.id) return gg;
+      const nx: any = { ...gg };
+      ensureInningsEvents(nx, inningIdx);
+      const half = getHalf(nx, inningIdx, isTop);
+
+      // 確保有投手（防守半局）
+      if (!offense && !half.pitcherId) return nx;
+
+      // 取得/建立當前 PA
+      const batterId = curBatterId;
+      let pa = half.pas[half.pas.length - 1];
+      if (!pa || pa.result !== null) {
+        pa = {
+          batterId,
+          pitcherId: half.pitcherId || 0,
+          pitches: [],
+          result: null,
+          outsAdded: 0,
+          ts: Date.now(),
+        };
+        half.pas.push(pa);
+      }
+
+      // 寫入結果與附加欄位
+      pa.result = res;
+      pa.outsAdded = outsOf(res);
+      if (offense && rbiInput) pa.rbi = rbiInput;
+      if (!offense && erInput)  pa.er  = erInput;
+
+      // 累出局
+      half.outs = Math.min<0|1|2|3>(3 as any, ((half.outs || 0) + pa.outsAdded) as any);
+      shouldAdvanceHalf = half.outs >= 3;
+
+      // 進攻半局：換下一棒
+      if (offense) {
+        const len = lineupPids.length || 9;
+        (nx as any)[batterIdxKey] = ((nextIdx + 1) % len);
+      }
+
+      return nx;
+    }));
+
+    // 重置附加輸入
+    if (offense) setRbiInput(0); else setErInput(0);
+    if (shouldAdvanceHalf) setStep(s => s + 1);
+  };
+
+  // 當前半局的 UI 狀態（只讀）
+  const curHalf = (() => {
+    const gg: any = g as any;
+    if (!gg.inningsEvents || !gg.inningsEvents[inningIdx]) {
+      return { outs: 0, pitcherId: undefined } as HalfInningEvent;
+    }
+    return isTop ? gg.inningsEvents[inningIdx].top : gg.inningsEvents[inningIdx].bot;
+  })();
+
+  const outsDisp = "●".repeat(curHalf.outs || 0) + "○".repeat(3 - (curHalf.outs || 0));
+  const curPitcherName = curHalf.pitcherId ? nameOf(curHalf.pitcherId) : "";
 
   return (
-    <div className="border rounded p-2 bg-white">
-      <div className="flex items-center gap-2 mb-2">
-        <button onClick={prev} disabled={step===0} className="px-2 py-1 rounded bg-gray-100 disabled:opacity-50">上一個</button>
+    <div className="border rounded p-3 space-y-3">
+      {/* 標題與導航 */}
+      <div className="flex items-center justify-between">
         <div className="font-semibold">
-          第 {inningIdx + 1} 局（{offense ? "攻擊" : "守備"}）
+          第 {inningIdx + 1} 局 {isTop ? "上" : "下"}（{offense ? "進攻" : "防守"}）&nbsp;
+          <span className="text-sm text-slate-600">出局：{outsDisp}</span>
         </div>
-        <button onClick={next} disabled={step===9*2-1} className="ml-auto px-2 py-1 rounded bg-gray-100 disabled:opacity-50">下一個</button>
+        <div className="flex items-center gap-2">
+          <button className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => Math.max(0, s - 1))}>上一半局</button>
+          <button className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => s + 1)}>下一半局</button>
+        </div>
       </div>
 
-      {/* 先攻/先守切換（每場一個開關） */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm text-gray-600">先攻/先守：</span>
-        <select
-          disabled={g.locked}
-          value={g.startDefense ? "D" : "O"}
-          onChange={(e) => {
-            const v = e.target.value === "D";
-            setGames(prev => prev.map(x => x.id === g.id ? { ...x, startDefense: v } : x));
-          }}
-          className="border px-2 py-1 rounded"
-        >
-          <option value="D">先守</option>
-          <option value="O">先攻</option>
-        </select>
-      </div>
-{/* 只有先攻時顯示：當局打者選單 + 名單 pill */}
-{offense && (
-  <div className="flex flex-wrap items-center gap-2 mb-2">
-    <div className="text-sm">當局打者：</div>
-    <select
-      className="text-sm border rounded px-2 py-1"
-      value={batterIdx}
-      onChange={(e) => setBatterIdx(Number(e.target.value))}
-      disabled={g.locked || lineupPids.length === 0}
-    >
-      {lineupPids.length === 0
-        ? <option value={0}>請先設定打線</option>
-        : lineupPids.map((pid, i) => (
-            <option key={pid} value={i}>
-              {i + 1}. {pidToName(g, pid)}
-            </option>
-          ))
-      }
-    </select>
-
-    {/* 快速切換用的名字 pill（可點） */}
-    <div className="flex flex-wrap gap-1">
-      {lineupPids.map((pid, i) => (
-        <button
-          key={pid}
-          type="button"
-          onClick={() => setBatterIdx(i)}
-          className={`text-xs px-2 py-1 rounded border ${i===batterIdx ? "bg-black text-white" : "bg-white"}`}
-          disabled={g.locked}
-        >
-          {i + 1}. {pidToName(g, pid)}
-        </button>
-      ))}
-    </div>
-  </div>
-)}
-
-      {offense ? (
-        <>
-          {/* 攻擊：逐人打擊 + 跑壘；即時寫回 g.stats（沿用 NumCell 行為） */}
-          <div className="overflow-x-auto mb-2">
-            <table className="border text-xs w-full">
-              <thead>
-                <tr>{Object.keys(initBatting()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-              </thead>
-              <tbody>
-                {g.lineup.map((pid) => {
-                  const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
-                  return (
-                    <tr key={pid}>
-                      {Object.keys(initBatting()).map((stat) => (
-                        <td key={stat} className="border px-2 py-1 text-center">
-                          {g.locked ? toNonNegNum((cur.batting as any)[stat]) : (
-                            <NumCell
-                              value={toNonNegNum((cur.batting as any)[stat])}
-                              onCommit={(n) => updateGameStat(g.id, pid, "batting", stat, n)}
-                            />
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="border text-xs w-full">
-              <thead>
-                <tr>{Object.keys(initBaserun()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
-              </thead>
-              <tbody>
-                {g.lineup.map((pid) => {
-                  const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
-                  return (
-                    <tr key={pid}>
-                      {Object.keys(initBaserun()).map((stat) => (
-                        <td key={stat} className="border px-2 py-1 text-center">
-                          {g.locked ? toNonNegNum((cur.baserunning as any)[stat]) : (
-                            <NumCell
-                              value={toNonNegNum((cur.baserunning as any)[stat])}
-                              onCommit={(n) => updateGameStat(g.id, pid, "baserunning", stat, n)}
-                            />
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* 守備半局：當局投手數據 + 全員守備（不顯示打擊/跑壘） */}
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm">當局投手：</span>
-            <select
-              disabled={g.locked}
-              value={pitcherPid === '' ? '' : String(pitcherPid)}
-              onChange={(e) => setPitcherPidLocal(e.target.value ? Number(e.target.value) : '')}
-              className="border px-2 py-1 rounded"
-            >
-              <option value="">未指定</option>
-              {pCandidates.map(pid => (
-                <option key={pid} value={pid}>{getNameAndPositions(players, g, pid).name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* 投手數據（僅當局投手） */}
-          {pitcherPid ? (
-            <div className="overflow-x-auto mb-3">
-              <table className="border text-xs w-full">
-                <thead>
-                  <tr>
-                    {Object.keys(initPitching()).map((k) => (
-                      <th key={k} className="border px-2 py-1">{k}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {Object.keys(initPitching()).map((stat) => {
-                      const pid = Number(pitcherPid);
-                      const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
-                      const isIP = stat === "IP";
-                      const key = `${g.id}:${pid}`;
-                      const rawValue = (cur.pitching as any)[stat];
-                      return (
-                        <td key={stat} className="border px-2 py-1 text-center">
-                          {g.locked ? (
-                            isIP ? formatIpDisplay(ipToInnings(rawValue)) : toNonNegNum(rawValue)
-                          ) : isIP ? (
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.1}
-                              className={IN_NUM_GRID}
-                              value={ipDraft[key] ?? String(rawValue ?? "")}
-                              onChange={(e) => {
-                                const prev = Number(ipDraft[key] ?? rawValue ?? 0) || 0;
-                                const next = stepIpValue(prev,Number(e.target.value));
-                                setIpDraft((d) => ({ ...d, [key]: String(next) }));
-                              }}
-                              onBlur={(e) => {
-                                const prev = Number(rawValue ?? 0) || 0;
-                                const next = stepIpValue(prev, Number(e.currentTarget.value));
-                                updateGameStat(g.id, pid, "pitching", "IP", Number(next) || 0);
-                                setIpDraft((d) => {
-                                  const nd = { ...d }; delete nd[key]; return nd;
-                                });
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                              }}
-                            />
-                          ) : (
-                            <NumCell
-                              value={toNonNegNum(rawValue)}
-                              onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)}
-                            />
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-
-          {/* 全員守備（PO/A/E） */}
-          <div className="overflow-x-auto">
-            <table className="border text-xs w-full">
-              <thead>
-                <tr>
-                  <th className="border px-2 py-1">球員</th>
-                  {["PO","A","E"].map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {g.lineup.map((pid) => {
-                  const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
-                  return (
-                    <tr key={pid}>
-                      <td className="border px-2 py-1">{ pidToName(g, pid) || "-"}</td>
-                      {["PO","A","E"].map((stat) => (
-                        <td key={stat} className="border px-2 py-1 text-center">
-                          {g.locked ? toNonNegNum((cur.fielding as any)[stat]) : (
-                            <NumCell
-                              value={toNonNegNum((cur.fielding as any)[stat])}
-                              onCommit={(n) => updateGameStat(g.id, pid, "fielding", stat, n)}
-                            />
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
+      {/* 投手選擇（防守半局） */}
+      {!offense && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-sm">投手：</div>
+          <select
+            className="text-sm border rounded px-2 py-1"
+            value={curHalf.pitcherId || 0}
+            onChange={(e) => setPitcher(Number(e.target.value))}
+          >
+            <option value={0}>（選擇投手）</option>
+            {pitcherOptions.map(pid => (
+              <option key={pid} value={pid}>{nameOf(pid)}</option>
+            ))}
+          </select>
+          {curPitcherName && <span className="text-xs text-slate-600">目前：{curPitcherName}</span>}
+        </div>
       )}
+
+      {/* 當局打者（進攻半局） */}
+      {offense && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-sm">打者：</div>
+          <div className="text-sm font-medium">
+            {nextIdx + 1}. {nameOf(curBatterId) || "（未設定）"}
+          </div>
+          {lineupPids.length > 0 && (
+            <div className="text-xs text-slate-500">
+              下一棒將自動輪到 {(nextIdx + 2) > lineupPids.length ? 1 : (nextIdx + 2)} 棒
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 逐球：B / S / F */}
+      <div className="flex items-center gap-2">
+        <div className="text-sm w-16">逐球：</div>
+        <button className="px-3 py-1 border rounded" onClick={() => addPitch("B")}>B</button>
+        <button className="px-3 py-1 border rounded" onClick={() => addPitch("S")}>S</button>
+        <button className="px-3 py-1 border rounded" onClick={() => addPitch("F")}>F</button>
+        <div className="text-xs text-slate-500">（每按一球會累計 PC）</div>
+      </div>
+
+      {/* 附加輸入（RBI/ER） */}
+      <div className="flex items-center gap-4">
+        {offense ? (
+          <label className="text-sm flex items-center gap-2">
+            RBI：
+            <input type="number" min={0} className="w-20 border rounded px-2 py-1" value={rbiInput} onChange={e => setRbiInput(Number(e.target.value) || 0)} />
+          </label>
+        ) : (
+          <label className="text-sm flex items-center gap-2">
+            ER（自責）：
+            <input type="number" min={0} className="w-20 border rounded px-2 py-1" value={erInput} onChange={e => setErInput(Number(e.target.value) || 0)} />
+          </label>
+        )}
+      </div>
+
+      {/* 打席結果按鈕 */}
+      <div className="space-y-2">
+        <div className="text-sm">打席結果：</div>
+        <div className="grid grid-cols-8 gap-2">
+          {/* 安打與保送 */}
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("1B")}>1B</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("2B")}>2B</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("3B")}>3B</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("HR")}>HR</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("BB")}>BB</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("IBB")}>IBB</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("HBP")}>HBP</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("SO")}>K</button>
+
+          {/* 出局型態 */}
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("GO")}>GO</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("FO")}>FO</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("SF")}>SF</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("SH")}>SH</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("DP")}>DP</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("TP")}>TP</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("CS")}>CS</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("E")}>E</button>
+          <button className="px-2 py-1 border rounded" onClick={() => commitResult("FC")}>FC</button>
+        </div>
+      </div>
     </div>
   );
 };
+
 
   
 const BoxScore = () => {
