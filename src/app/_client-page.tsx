@@ -1346,9 +1346,9 @@ function isOffenseHalfSimple(g: Game, isTop: boolean) {
   return g.startDefense ? !isTop : isTop;
 }
 
-// ---- 事件版 HalfStepper（逐球自動 BB/K、結果按鈕寫統計、修正跳半局）----
+// ---- 事件版 HalfStepper（含球數面板、逐球自動BB/K、結果按鈕寫統計、三出局換半局 + 防跳回）----
 const HalfStepper = ({ g }: { g: Game }) => {
-  // 半局：0=1上,1=1下,2=2上... － 用 sessionStorage 鎖住，避免重掛回到 1上
+  // 半局：0=1上,1=1下,2=2上... 以 sessionStorage 固定，避免重掛載跳回
   const [step, setStep] = useState<number>(() => {
     if (typeof window === "undefined") return 0;
     const key = `step_g_${g.id}`;
@@ -1364,13 +1364,13 @@ const HalfStepper = ({ g }: { g: Game }) => {
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
 
-  // 這半局是否我方進攻（沿用你現有的簡化邏輯）
+  // 這半局是否我方進攻（沿用現有邏輯）
   const offense =
     typeof (isOffenseHalfSimple) === "function"
       ? isOffenseHalfSimple(g, isTop)
       : isTop;
 
-  // 打線與目前打者
+  // 打線與當局打者
   const lineupPids = (g.lineup || []).filter(Boolean);
   const batterIdxKey = isTop ? "nextBatterIdxTop" : "nextBatterIdxBot";
   const nextIdx = (g as any)[batterIdxKey] ?? 0;
@@ -1409,14 +1409,14 @@ const HalfStepper = ({ g }: { g: Game }) => {
     return list.length ? list : (g.lineup || []);
   })();
 
-  // 確保 stats[pid] 存在
+  // stats 小工具
   const ensureTriple = (nx: any, pid: number) => {
     nx.stats = nx.stats || {};
     if (!nx.stats[pid]) nx.stats[pid] = emptyTriple();
   };
   const inc = (obj: any, k: string, v = 1) => { obj[k] = toNonNegNum(obj[k]) + v; };
 
-  // 逐球 → 球數
+  // 逐球 → 球數（F 只補到 2 好）
   const countFromPitches = (arr: PitchMark[]) => {
     let strikes = 0, balls = 0;
     for (const p of arr) {
@@ -1427,7 +1427,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
     return { balls, strikes };
   };
 
-  // 設定/更換投手（當前半局）
+  // 設/換投手（寫入當前半局）
   const setPitcher = (pid: number) => {
     setGames(prev =>
       prev.map(gg => {
@@ -1453,13 +1453,13 @@ const HalfStepper = ({ g }: { g: Game }) => {
         ensureInningsEvents(nx, inningIdx);
         const half = getCurHalf(nx);
 
-        // 守備半局一定要有投手
+        // 守備半局要先有投手
         if (!offense && !half.pitcherId) {
           blocked = true;
           return nx;
         }
 
-        // 取得/建立當前打席
+        // 取得/建立當前 PA
         const batterId = curBatterId;
         let pa = half.pas[half.pas.length - 1];
         if (!pa || pa.result !== null) {
@@ -1502,7 +1502,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
     }
   };
 
-  // 提交打席結果（並將數據寫入 stats）
+  // 提交打席結果（結果按鈕 & 自動 BB/K 都會走這裡；寫入打者/投手統計）
   const commitResult = (res: PAResult) => {
     let shouldAdvanceHalf = false;
 
@@ -1537,8 +1537,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
         if (offense && rbiInput) pa.rbi = rbiInput;
         if (!offense && erInput)  pa.er  = erInput;
 
-        // ====== 統計寫入（只寫我方可辨識的球員） ======
-        // 我方進攻：寫打者打擊
+        // ===== 寫統計：打者（我方進攻） =====
         if (offense && batterId) {
           ensureTriple(nx, batterId);
           const bat = nx.stats[batterId].batting;
@@ -1556,20 +1555,18 @@ const HalfStepper = ({ g }: { g: Game }) => {
             case "SO": inc(bat, "SO", 1); break;
             case "SF": inc(bat, "SF", 1); break;
             case "SH": inc(bat, "SH", 1); break;
-            default: break; // GO/FO/DP/TP/E/FC/CS 不額外寫
+            default: break; // GO/FO/DP/TP/E/FC/CS 不額外加
           }
           if (rbiInput) inc(bat, "RBI", rbiInput);
         }
 
-        // 我方防守：寫投手投球
+        // ===== 寫統計：投手（我方防守） =====
         if (!offense && half.pitcherId) {
           const pid = half.pitcherId;
           ensureTriple(nx, pid);
           const pit = nx.stats[pid].pitching;
 
-          // 面對打者 +1
-          inc(pit, "BF", 1);
-
+          inc(pit, "BF", 1); // 面對打者 +1
           switch (res) {
             case "SO": inc(pit, "SO", 1); break;
             case "BB": inc(pit, "BB", 1); break;
@@ -1581,9 +1578,8 @@ const HalfStepper = ({ g }: { g: Game }) => {
           }
           if (erInput) inc(pit, "ER", erInput);
         }
-        // ====== 統計寫入結束 ======
 
-        // 累出局（收窄型別）
+        // 累出局（0..3，收窄型別）
         const newOuts = Math.max(0, Math.min(3, (half.outs ?? 0) + pa.outsAdded)) as 0 | 1 | 2 | 3;
         half.outs = newOuts;
         shouldAdvanceHalf = newOuts >= 3;
@@ -1599,11 +1595,11 @@ const HalfStepper = ({ g }: { g: Game }) => {
 
     // 清空輸入
     if (offense) setRbiInput(0); else setErInput(0);
-    // 三出局 → 下一半局（step 已被 sessionStorage 鎖住，不會跳回）
+    // 三出局 → 下一半局（step 有 sessionStorage，不會跳回）
     if (shouldAdvanceHalf) setStep(s => s + 1);
   };
 
-  // 當前半局（渲染）
+  // 當前半局（渲染用）
   const curHalf = (() => {
     const gg: any = g as any;
     if (!gg.inningsEvents || !gg.inningsEvents[inningIdx]) {
@@ -1611,8 +1607,31 @@ const HalfStepper = ({ g }: { g: Game }) => {
     }
     return isTop ? gg.inningsEvents[inningIdx].top : gg.inningsEvents[inningIdx].bot;
   })();
+
+  // 目前球數（只看尚未結束的最後一個 PA）
+  const curPA = curHalf.pas?.length ? curHalf.pas[curHalf.pas.length - 1] : null;
+  const { balls: curBalls, strikes: curStrikes } =
+    curPA && curPA.result === null ? countFromPitches(curPA.pitches) : { balls: 0, strikes: 0 };
+
   const outsDisp = "●".repeat(curHalf.outs || 0) + "○".repeat(3 - (curHalf.outs || 0));
   const curPitcherName = curHalf.pitcherId ? nameOf(curHalf.pitcherId) : "";
+
+  // 小顆點列
+  const DotRow = ({ label, n, total, colorClass }:
+    { label: string; n: number; total: number; colorClass: string }) => (
+    <div className="flex items-center gap-2">
+      <span className="text-xs w-8">{label}</span>
+      <div className="flex items-center gap-1">
+        {Array.from({ length: total }).map((_, i) => (
+          <span
+            key={i}
+            className={`inline-block w-3 h-3 rounded-full border ${i < n ? colorClass : "border-slate-300"}`}
+            style={i < n ? {} : { background: "transparent" }}
+          />
+        ))}
+    </div>
+    </div>
+  );
 
   return (
     <div className="border rounded p-3 space-y-3">
@@ -1670,6 +1689,13 @@ const HalfStepper = ({ g }: { g: Game }) => {
         <div className="text-xs text-slate-500">（4 壞自動保送、3 好自動三振）</div>
       </div>
 
+      {/* 球數面板：壞球綠、好球黃、出局紅 */}
+      <div className="flex flex-wrap items-center gap-6">
+        <DotRow label="B" n={Math.min(4, curBalls)} total={4} colorClass="bg-green-500 border-green-500" />
+        <DotRow label="S" n={Math.min(3, curStrikes)} total={3} colorClass="bg-yellow-400 border-yellow-400" />
+        <DotRow label="Out" n={Math.min(3, curHalf.outs || 0)} total={3} colorClass="bg-red-500 border-red-500" />
+      </div>
+
       {/* 附加輸入（RBI/ER） */}
       <div className="flex items-center gap-4">
         {offense ? (
@@ -1714,6 +1740,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
     </div>
   );
 };
+
 
 
 
