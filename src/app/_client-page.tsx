@@ -89,7 +89,7 @@ const buildLabel = (() => {
   } catch { return ""; }
 })();
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
@@ -213,6 +213,7 @@ type Game = {
    常數 / Helper
 ========================================================= */
 const MLB_POSITIONS = ["P","C","1B","2B","3B","SS","LF","CF","RF","DH"];
+const DEF_POS = ["P","C","1B","2B","3B","SS","LF","CF","RF"];
 const HANDS: Array<"R"|"L"|"S"> = ["R","L","S"];
 
 const STORAGE = {
@@ -222,7 +223,7 @@ const STORAGE = {
   compareSelH: "rsbm.compare.sel.h",
   compareSelP: "rsbm.compare.sel.p",
   compareSelF: "rsbm.compare.sel.f",
-};
+};;
 
 const toNonNegNum = (v: any) => {
   const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0;
@@ -285,13 +286,7 @@ function reviveGames(raw: any): Game[] {
   winPid: Number(g?.winPid) || undefined,   // ← 新增
   lossPid: Number(g?.lossPid) || undefined, // ← 新增
   savePid: Number(g?.savePid) || undefined, // ← 新增
-  defense: (Array.isArray(g?.defense)
-  ? g.defense.map((row: any) => (
-      Array.isArray(row)
-        ? row.map((n: any) => Number(n) || 0).slice(0, 9).concat(Array(Math.max(0, 9 - (row.length||0))).fill(0)).slice(0,9)
-        : Array(9).fill(0)
-    ))
-  : Array.from({ length: 9 }, () => Array(9).fill(0))),
+  defense: Array.from({ length: 9 }, () => Array(9).fill(0)),
   startDefense: (g?.startDefense ?? true) ? true : false,
   mode: (g?.mode === "inning" ? "inning" : "classic"),
 };
@@ -509,16 +504,6 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
 /* =========================================================
    主頁
 ========================================================= */
-async function hardRefresh() {
-  // 以版本參數組出回跳網址
-  const url = new URL(window.location.href);
-  url.searchParams.set("v", BUILD || String(Date.now()));
-  const next = url.toString();
-
-  // 導航到 /api/clear（會回 200 並自動轉回 next）
-  window.location.href = "/api/clear?next=" + encodeURIComponent(next);
-}
-
 export default function Home() {
 useFloatingCheckUpdateButton(hardRefresh);
 
@@ -622,6 +607,15 @@ useFloatingCheckUpdateButton(hardRefresh);
 
   /* ---------------- Navbar ---------------- */
 
+async function hardRefresh() {
+  // 以版本參數組出回跳網址
+  const url = new URL(window.location.href);
+  url.searchParams.set("v", BUILD || String(Date.now()));
+  const next = url.toString();
+
+  // 導航到 /api/clear（會回 200 並自動轉回 next）
+  window.location.href = "/api/clear?next=" + encodeURIComponent(next);
+}
 
 
 
@@ -853,28 +847,61 @@ const addGame = () => {
   };
 
   /* ---------------- 守備 9×9 ---------------- */
+  
   const setDefense = (gid: number, inningIdx: number, posIdx: number, pid: number) => {
     setGames(prev => prev.map(g => {
       if (g.id !== gid) return g;
       const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
       if (!grid[inningIdx]) grid[inningIdx] = Array(9).fill(0);
+      const posName = DEF_POS[posIdx];
+      if (pid) {
+        const info = getNameAndPositions(players, g, pid);
+        const allowed = (info?.positions || []).includes(posName);
+        if (!allowed) {
+          alert(`此球員未在新增時勾選「${'${posName}'}」，不可填入該位置。`);
+          return g;
+        }
+      }
       grid[inningIdx][posIdx] = pid || 0;
       return { ...g, defense: grid };
     }));
   };
+
+  
   const copyDefenseRow = (gid: number, inningIdx: number) => {
     setGames(prev => prev.map(g => {
       if (g.id !== gid || inningIdx <= 0) return g;
       const grid = g.defense ? g.defense.map(r => [...r]) : Array.from({ length: 9 }, () => Array(9).fill(0));
-      grid[inningIdx] = [...grid[inningIdx - 1]];
+      const prevRow = grid[inningIdx - 1] || Array(9).fill(0);
+      grid[inningIdx] = prevRow.map((pid, c) => {
+        if (!pid) return 0;
+        const info = getNameAndPositions(players, g, pid);
+        const ok = (info?.positions || []).includes(DEF_POS[c]);
+        return ok ? pid : 0;
+      });
       return { ...g, defense: grid };
     }));
   };
+
   const clearDefenseRow = (gid: number, idx: number) => {
     setGames(prev => prev.map(g => g.id === gid ? { ...g, defense: (g.defense||Array.from({ length: 9 }, () => Array(9).fill(0))).map((row,i)=> i===idx? Array(9).fill(0): row) } : g));
   };
   const clearDefenseAll = (gid: number) => {
     setGames(prev => prev.map(g => g.id === gid ? { ...g, defense: Array.from({ length: 9 }, () => Array(9).fill(0)) } : g));
+  };
+
+  // ---- 守備逐局收合狀態（UI 專用，不入存檔） ----
+  const getDefCollapseArr = (gid: number) => defCollapsed[gid] ?? Array(9).fill(true);
+  const toggleDefRow = (gid: number, idx: number, next?: boolean) => {
+    setDefCollapsed(prev => {
+      const base = prev[gid] ?? Array(9).fill(true);
+      const arr = base.slice();
+      arr[idx] = (next === undefined) ? !arr[idx] : !!next;
+      return { ...prev, [gid]: arr };
+    });
+  };
+  const setAllDefRows = (gid: number, flag: boolean) => {
+    setDefCollapsed(prev => ({ ...prev, [gid]: Array(9).fill(flag) }));
   };
   const pidToName = (g: Game, pid: number) => {
     if (!pid) return "";
@@ -1194,155 +1221,36 @@ function isOffenseHalfSimple(g: Game, isTop: boolean) {
   return g.startDefense ? !isTop : isTop;
 }
 
-/* 單半局步進式輸入（防守半局只保留「當局投手」下拉；不顯示投手/守備三列） */
+/* 單半局步進式輸入（守備半局＝當局投手數據＋全員守備；攻擊半局＝打擊＋跑壘） */
 const HalfStepper = ({ g }: { g: Game }) => {
-  const [step, setStep] = useState(0); // 0..17 (9局*上下半)
+  const [step, setStep] = useState(0);                  // 0..(9*2-1)
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
   const offense = isOffenseHalfSimple(g, isTop);
 
-  // 候選投手（在打線中且含 P）
   const pCandidates = g.lineup.filter(pid => (getNameAndPositions(players, g, pid).positions || []).includes("P"));
   const [pitcherPid, setPitcherPidLocal] = useState<number | ''>(pCandidates[0] ?? '');
   useEffect(() => {
-    const first = pCandidates[0] ?? '';
-    if (!pCandidates.includes(Number(pitcherPid))) setPitcherPidLocal(first);
+    if (pCandidates.length && !pCandidates.includes(Number(pitcherPid))) {
+      setPitcherPidLocal(pCandidates[0]);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g.lineup.join(","), step]);
 
-  // Inning 狀態
-  const [outs, setOuts] = useState(0);       // 0..3
-  const [balls, setBalls] = useState(0);     // per-PA
-  const [strikes, setStrikes] = useState(0); // per-PA
-  const [curBatterPid, setCurBatterPid] = useState<number | ''>(g.lineup[0] ?? '');
-  // 目前打序索引（自動輪到下一棒；僅在攻擊半局進位）
-  const [batIdx, setBatIdx] = useState(0);
-  useEffect(() => {
-    if (!Array.isArray(g.lineup) || g.lineup.length === 0) { setCurBatterPid(''); return; }
-    if (batIdx >= g.lineup.length) setBatIdx(0);
-    const pid = g.lineup[batIdx] ?? '';
-    setCurBatterPid(pid);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [g.lineup.join(','), batIdx]);
-
-
-  // 讀/寫目前比賽局部統計
-  const getStatLocal = (pid: number, section: keyof Triple, key: string) => {
-    const triple = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
-    // @ts-ignore
-    return Number((triple[section] ?? {})[key] ?? 0);
-  };
-  const setStatLocal = (pid: number, section: keyof Triple, key: string, next: number) => {
-    updateGameStat(g.id, pid, section, key, Math.max(0, Number(next) || 0));
-  };
-  const addStatLocal = (pid: number, section: keyof Triple, key: string, delta: number) => {
-    const cur = getStatLocal(pid, section, key);
-    setStatLocal(pid, section, key, cur + delta);
-  };
-
-  // IP/Outs 互轉（嚴格 0.0/0.1/0.2 制）
-  const outsToIP = (o: number) => {
-    const w = Math.floor(o / 3);
-    const r = o % 3;
-    return Number((w + r / 10).toFixed(1));
-  };
-  const ipToOuts = (ip: number) => {
-    const w = Math.trunc(ip);
-    const f = Math.round(((ip - w) * 10));
-    return w * 3 + Math.max(0, Math.min(2, f));
-  };
-
-  // 調整出局數，並同步當局投手 IP
-  const commitOuts = (delta: number) => {
-    const nextOuts = Math.max(0, Math.min(3, outs + delta));
-    const actual = nextOuts - outs;
-    if (actual && pitcherPid) {
-      const pid = Number(pitcherPid);
-      const curIP = getStatLocal(pid, "pitching", "IP");
-      const curOuts = ipToOuts(curIP);
-      setStatLocal(pid, "pitching", "IP", outsToIP(curOuts + actual));
-    }
-    setOuts(nextOuts);
-    if (nextOuts >= 3) {
-      // 自動切下一半局
-      setOuts(0); setBalls(0); setStrikes(0);
-      setStep(s => Math.min(9*2 - 1, s + 1));
-    }
-  };
-
-  const endPA = () => { setBalls(0); setStrikes(0); if (offense && g.lineup.length) setBatIdx(i => (i + 1) % g.lineup.length); };
-
   const prev = () => setStep(s => Math.max(0, s - 1));
   const next = () => setStep(s => Math.min(9*2 - 1, s + 1));
-
-  // ---- 事件：打者結果（攻擊用） ----
-  const hit = (bases: 1|2|3|4) => {
-  if (!curBatterPid) return;
-  const pid = Number(curBatterPid);
-  addStatLocal(pid, "batting", bases === 1 ? "1B" : bases === 2 ? "2B" : bases === 3 ? "3B" : "HR", 1);
-  // 投手自動統計（被安打、被全壘打、對手的 AB）
-  if (pitcherPid) {
-    const ppid = Number(pitcherPid);
-    addStatLocal(ppid, "pitching", "H", 1);
-    if (bases === 4) addStatLocal(ppid, "pitching", "HR", 1);
-    addStatLocal(ppid, "pitching", "AB", 1);
-  }
-  endPA();
-};
-  const outBy = (kind: "GO"|"FO"|"SO"|"SF"|"SH") => {
-  if (!curBatterPid) return;
-  const pid = Number(curBatterPid);
-  if (kind === "SF" || kind === "SH") {
-    addStatLocal(pid, "batting", kind, 1);
-    // 投手：犧牲打/飛不計入對手 AB
-  } else {
-    addStatLocal(pid, "batting", kind, 1);
-    // 投手：凡是出局（含三振）都計入對手 AB；三振另計 K
-    if (pitcherPid) {
-      const ppid = Number(pitcherPid);
-      addStatLocal(ppid, "pitching", "AB", 1);
-      if (kind === "SO") addStatLocal(ppid, "pitching", "K", 1);
-    }
-  }
-  commitOuts(1);
-  endPA();
-};
-  const walkLike = (kind: "BB"|"HBP") => {
-  if (!curBatterPid) return;
-  const pid = Number(curBatterPid);
-  addStatLocal(pid, "batting", kind, 1);
-  if (pitcherPid) {
-    const ppid = Number(pitcherPid);
-    addStatLocal(ppid, "pitching", kind, 1);
-  }
-  endPA();
-};Local(Number(pitcherPid), "pitching", kind, 1);
-    endPA();
-  };
-
-  // ---- 逐球：累計 Ball / Strike 並統計 PC（守備或攻擊都會顯示） ----
-  const addPitch = (type: "B"|"S") => {
-    if (pitcherPid) addStatLocal(Number(pitcherPid), "pitching", "PC", 1);
-    if (type === "B") {
-      const b = Math.min(4, balls + 1);
-      setBalls(b);
-      if (b >= 4) walkLike("BB");
-    } else {
-      const s = Math.min(3, strikes + 1);
-      setStrikes(s);
-      if (s >= 3) outBy("SO");
-    }
-  };
 
   return (
     <div className="border rounded p-2 bg-white">
       <div className="flex items-center gap-2 mb-2">
         <button onClick={prev} disabled={step===0} className="px-2 py-1 rounded bg-gray-100 disabled:opacity-50">上一個</button>
-        <div className="font-semibold">第 {inningIdx + 1} 局（{offense ? "攻擊" : "守備"}）</div>
+        <div className="font-semibold">
+          第 {inningIdx + 1} 局（{offense ? "攻擊" : "守備"}）
+        </div>
         <button onClick={next} disabled={step===9*2-1} className="ml-auto px-2 py-1 rounded bg-gray-100 disabled:opacity-50">下一個</button>
       </div>
 
-      {/* 先攻/先守 */}
+      {/* 先攻/先守切換（每場一個開關） */}
       <div className="flex items-center gap-2 mb-3">
         <span className="text-sm text-gray-600">先攻/先守：</span>
         <select
@@ -1359,98 +1267,32 @@ const HalfStepper = ({ g }: { g: Game }) => {
         </select>
       </div>
 
-      {/* 當局投手（守備時需要，攻擊也允許顯示以便逐球 PC） */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm">當局投手：</span>
-        <select
-          disabled={g.locked}
-          value={pitcherPid === '' ? '' : String(pitcherPid)}
-          onChange={(e) => setPitcherPidLocal(e.target.value ? Number(e.target.value) : '')}
-          className="border px-2 py-1 rounded"
-        >
-          <option value="">未指定</option>
-          {pCandidates.map(pid => (
-            <option key={pid} value={pid}>{getNameAndPositions(players, g, pid).name}</option>
-          ))}
-        </select>
-
-        <div className="ml-auto flex items-center gap-3 text-xs">
-          <div className="flex items-center gap-1">
-            B:
-            <button className="px-2 py-1 border rounded" onClick={() => addPitch("B")}>+</button>
-            <span className="min-w-[1.5rem] text-center">{balls}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            S:
-            <button className="px-2 py-1 border rounded" onClick={() => addPitch("S")}>+</button>
-            <span className="min-w-[1.5rem] text-center">{strikes}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            Outs:
-            <button className="px-2 py-1 border rounded" onClick={() => commitOuts(1)}>+1</button>
-            <button className="px-2 py-1 border rounded" onClick={() => commitOuts(-1)}>-1</button>
-            <div className="flex gap-1 ml-1">{[0,1,2].map(i => <div key={i} className={"h-2.5 w-2.5 rounded-full border " + (outs>i?"bg-black":"bg-white")} />)}</div>
-          </div>
-        </div>
-      </div>
-
       {offense ? (
         <>
-          {/* 攻擊：打者與結果按鈕 */}
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm">當前打者：</span>
-            <select
-              disabled={g.locked}
-              value={curBatterPid === '' ? '' : String(curBatterPid)}
-              onChange={(e) => setCurBatterPid(e.target.value ? Number(e.target.value) : '')}
-              className="border px-2 py-1 rounded"
-            >
-              <option value="">未指定</option>
-              {g.lineup.map(pid => (
-                <option key={pid} value={pid}>{pidToName(g, pid) || pid}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* 打擊結果 */}
-          <div className="grid grid-cols-5 gap-2 mb-2">
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => hit(1)}>1B</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => hit(2)}>2B</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => hit(3)}>3B</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => hit(4)}>HR</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => walkLike("BB")}>BB</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => walkLike("HBP")}>HBP</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => outBy("GO")}>GO</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => outBy("FO")}>FO</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => outBy("SO")}>SO</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => outBy("SF")}>SF</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => outBy("SH")}>SH</button>
-          </div>
-
-          {/* 跑壘/得分 */}
-          <div className="grid grid-cols-4 gap-2">
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => addStatLocal(Number(curBatterPid),"batting","R",1)}>R+</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => addStatLocal(Number(curBatterPid),"batting","RBI",1)}>RBI+</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => addStatLocal(Number(curBatterPid),"baserunning","SB",1)}>SB+</button>
-            <button className="border rounded px-3 py-2" disabled={!curBatterPid} onClick={() => addStatLocal(Number(curBatterPid),"baserunning","CS",1)}>CS</button>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* 守備：僅顯示投手相關快捷（PC/K/BB/H/HR/ER） */}
-          <div className="grid grid-cols-6 gap-2">
-            <button className="border rounded px-3 py-2" disabled={!pitcherPid} onClick={() => addStatLocal(Number(pitcherPid!),"pitching","K",1)}>K</button>
-            <button className="border rounded px-3 py-2" disabled={!pitcherPid} onClick={() => addStatLocal(Number(pitcherPid!),"pitching","BB",1)}>BB</button>
-            <button className="border rounded px-3 py-2" disabled={!pitcherPid} onClick={() => addStatLocal(Number(pitcherPid!),"pitching","H",1)}>H+</button>
-            <button className="border rounded px-3 py-2" disabled={!pitcherPid} onClick={() => addStatLocal(Number(pitcherPid!),"pitching","HR",1)}>HR+</button>
-            <button className="border rounded px-3 py-2" disabled={!pitcherPid} onClick={() => addStatLocal(Number(pitcherPid!),"pitching","ER",1)}>ER+</button>
-            <button className="border rounded px-3 py-2" disabled={!pitcherPid} onClick={() => addStatLocal(Number(pitcherPid!),"pitching","AB",1)}>BF+</button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-)}
+          {/* 攻擊：逐人打擊 + 跑壘；即時寫回 g.stats（沿用 NumCell 行為） */}
+          <div className="overflow-x-auto mb-2">
+            <table className="border text-xs w-full">
+              <thead>
+                <tr>{Object.keys(initBatting()).map((k)=> <th key={k} className="border px-2 py-1">{k}</th>)}</tr>
+              </thead>
+              <tbody>
+                {g.lineup.map((pid) => {
+                  const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
+                  return (
+                    <tr key={pid}>
+                      {Object.keys(initBatting()).map((stat) => (
+                        <td key={stat} className="border px-2 py-1 text-center">
+                          {g.locked ? toNonNegNum((cur.batting as any)[stat]) : (
+                            <NumCell
+                              value={toNonNegNum((cur.batting as any)[stat])}
+                              onCommit={(n) => updateGameStat(g.id, pid, "batting", stat, n)}
+                            />
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1484,7 +1326,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
         </>
       ) : (
         <>
-          {/* 守備半局：只留『當局投手』下拉，不顯示投手/守備三列 */}
+          {/* 守備半局：當局投手數據 + 全員守備（不顯示打擊/跑壘） */}
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm">當局投手：</span>
             <select
@@ -1498,6 +1340,100 @@ const HalfStepper = ({ g }: { g: Game }) => {
                 <option key={pid} value={pid}>{getNameAndPositions(players, g, pid).name}</option>
               ))}
             </select>
+          </div>
+
+          {/* 投手數據（僅當局投手） */}
+          {pitcherPid ? (
+            <div className="overflow-x-auto mb-3">
+              <table className="border text-xs w-full">
+                <thead>
+                  <tr>
+                    {Object.keys(initPitching()).map((k) => (
+                      <th key={k} className="border px-2 py-1">{k}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {Object.keys(initPitching()).map((stat) => {
+                      const pid = Number(pitcherPid);
+                      const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
+                      const isIP = stat === "IP";
+                      const key = `${g.id}:${pid}`;
+                      const rawValue = (cur.pitching as any)[stat];
+                      return (
+                        <td key={stat} className="border px-2 py-1 text-center">
+                          {g.locked ? (
+                            isIP ? formatIpDisplay(ipToInnings(rawValue)) : toNonNegNum(rawValue)
+                          ) : isIP ? (
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.1}
+                              className={IN_NUM_GRID}
+                              value={ipDraft[key] ?? String(rawValue ?? "")}
+                              onChange={(e) => {
+                                const prev = Number(ipDraft[key] ?? rawValue ?? 0) || 0;
+                                const next = stepIpValue(prev,Number(e.target.value));
+                                setIpDraft((d) => ({ ...d, [key]: String(next) }));
+                              }}
+                              onBlur={(e) => {
+                                const prev = Number(rawValue ?? 0) || 0;
+                                const next = stepIpValue(prev, Number(e.currentTarget.value));
+                                updateGameStat(g.id, pid, "pitching", "IP", Number(next) || 0);
+                                setIpDraft((d) => {
+                                  const nd = { ...d }; delete nd[key]; return nd;
+                                });
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                              }}
+                            />
+                          ) : (
+                            <NumCell
+                              value={toNonNegNum(rawValue)}
+                              onCommit={(n) => updateGameStat(g.id, pid, "pitching", stat, n)}
+                            />
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {/* 全員守備（PO/A/E） */}
+          <div className="overflow-x-auto">
+            <table className="border text-xs w-full">
+              <thead>
+                <tr>
+                  <th className="border px-2 py-1">球員</th>
+                  {["PO","A","E"].map((k) => <th key={k} className="border px-2 py-1">{k}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {g.lineup.map((pid) => {
+                  const cur = g.stats[pid] ?? { batting: initBatting(), pitching: initPitching(), fielding: initFielding(), baserunning: initBaserun() };
+                  return (
+                    <tr key={pid}>
+                      <td className="border px-2 py-1">{pidToName(g, pid) || "-"}</td>
+                      {["PO","A","E"].map((stat) => (
+                        <td key={stat} className="border px-2 py-1 text-center">
+                          {g.locked ? toNonNegNum((cur.fielding as any)[stat]) : (
+                            <NumCell
+                              value={toNonNegNum((cur.fielding as any)[stat])}
+                              onCommit={(n) => updateGameStat(g.id, pid, "fielding", stat, n)}
+                            />
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </>
       )}
@@ -1794,7 +1730,7 @@ return (
 
           {/* 守備位置逐局（9×9） */}
           <div className="border rounded p-2">
-            <div className="font-semibold mb-2">守備位置逐局</div>
+            <div className="font-semibold mb-2 flex items-center gap-2">守備位置逐局{!g.locked && <><button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => setAllDefRows(g.id, false)}>全部展開</button><button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => setAllDefRows(g.id, true)}>全部收起</button></>}</div>
             <div className="overflow-x-auto">
               <table className="border text-xs md:text-sm w-full">
                 <thead>
@@ -1805,39 +1741,84 @@ return (
                     ))}
                   </tr>
                 </thead>
-                <tbody>
-                  {Array.from({ length: 9 }).map((_, r) => (
-                    <tr key={r}>
-                      <td className="border px-2 py-1 text-center">{r+1}</td>
-                      {Array.from({ length: 9 }).map((_, c) => {
-                        const pid = (g.defense?.[r]?.[c] ?? 0) || 0;
-                        return (
-                          <td key={c} className="border px-1 py-1">
-                            {g.locked ? (
-                              <span className="text-xs">{pidToName(g, pid) || "-"}</span>
-                            ) : (
-                              <select
-                                className="w-full border rounded px-1 py-1 text-xs"
-                                value={pid || 0}
-                                onChange={(e) => setDefense(g.id, r, c, Number(e.target.value)||0)}
+                
+              <tbody>
+                {Array.from({ length: 9 }).map((_, r) => {
+                  const collapseArr = getDefCollapseArr(g.id);
+                  const collapsed = collapseArr[r];
+                  const filledCnt = (g.defense?.[r] ?? []).filter((x) => x && x>0).length;
+                  return (
+                    <Fragment key={r}>
+                      <tr className="bg-slate-50">
+                        <td className="border px-2 py-1 text-left" colSpan={10}>
+                          <span className="font-semibold mr-2">{r+1} 局</span>
+                          <span className="text-xs text-slate-600 mr-3">已填 {filledCnt}/9</span>
+                          <button
+                            className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-0.5 rounded mr-2"
+                            onClick={() => toggleDefRow(g.id, r)}
+                          >
+                            {collapsed ? "展開" : "收起"}
+                          </button>
+                          {!g.locked && (
+                            <>
+                              <button
+                                className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-0.5 rounded mr-2"
+                                onClick={() => copyDefenseRow(g.id, r)}
+                                disabled={r === 0}
+                                title={r===0 ? "第 1 局無上一局" : "複製上一局（自動過濾不相容位置）"}
                               >
-                                <option value={0}>（空）</option>
-                                {g.lineup.map(pid => (
-                                  <option key={pid} value={pid}>{pidToName(g, pid)}</option>
-                                ))}
-                              </select>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
+                                複製上一局
+                              </button>
+                              <button
+                                className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-0.5 rounded"
+                                onClick={() => clearDefenseRow(g.id, r)}
+                              >
+                                清空本局
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                      {!collapsed && (
+                        <tr>
+                          <td className="border px-2 py-1 text-center">{r+1}</td>
+                          {Array.from({ length: 9 }).map((_, c) => {
+                            const pidRaw = (g.defense?.[r]?.[c] ?? 0) || 0;
+                            const allowedIds = g.lineup.filter(pid0 => {
+                              const info = getNameAndPositions(players, g, pid0);
+                              return (info?.positions || []).includes(DEF_POS[c]);
+                            });
+                            const value = allowedIds.includes(pidRaw) ? pidRaw : 0;
+                            return (
+                              <td key={c} className="border px-1 py-1">
+                                {g.locked ? (
+                                  <span className="text-xs">{pidToName(g, value) || "-"}</span>
+                                ) : (
+                                  <select
+                                    className="w-full border rounded px-1 py-1 text-xs"
+                                    value={value}
+                                    onChange={(e) => setDefense(g.id, r, c, Number(e.target.value)||0)}
+                                  >
+                                    <option value={0}>（空）</option>
+                                    {allowedIds.map(pid => (
+                                      <option key={pid} value={pid}>{pidToName(g, pid)}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+
               </table>
             </div>
             {!g.locked && (
               <div className="flex flex-wrap gap-2 mt-2">
-                <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => copyDefenseRow(g.id, 1)}>複製上一局（2→1 無效）</button>
                 <button className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded" onClick={() => clearDefenseAll(g.id)}>全部清空</button>
               </div>
             )}
