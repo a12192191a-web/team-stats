@@ -1406,7 +1406,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
       if (gg.id !== g.id) return gg;
       const nx: any = { ...gg };
       ensureInningsEvents(nx, inningIdx);
-      const half = getHalf(nx, inningIdx, !offense); // 防守半局才需要投手
+      const half = getHalf(nx, inningIdx, isTop); // 針對「目前」半局設投手
       half.pitcherId = pid || undefined;
       return nx;
     }));
@@ -1519,8 +1519,8 @@ half.outs = newOuts;
           <span className="text-sm text-slate-600">出局：{outsDisp}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => Math.max(0, s - 1))}>上一半局</button>
-          <button className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => s + 1)}>下一半局</button>
+          <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => Math.max(0, s - 1))}>上一半局</button>
+         <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => s + 1)}>下一半局</button>
         </div>
       </div>
 
@@ -1560,9 +1560,10 @@ half.outs = newOuts;
       {/* 逐球：B / S / F */}
       <div className="flex items-center gap-2">
         <div className="text-sm w-16">逐球：</div>
-        <button className="px-3 py-1 border rounded" onClick={() => addPitch("B")}>B</button>
-        <button className="px-3 py-1 border rounded" onClick={() => addPitch("S")}>S</button>
-        <button className="px-3 py-1 border rounded" onClick={() => addPitch("F")}>F</button>
+      
+ <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("B")}>B</button>
+ <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("S")}>S</button>
+ <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("F")}>F</button>
         <div className="text-xs text-slate-500">（每按一球會累計 PC）</div>
       </div>
 
@@ -1586,25 +1587,25 @@ half.outs = newOuts;
         <div className="text-sm">打席結果：</div>
         <div className="grid grid-cols-8 gap-2">
           {/* 安打與保送 */}
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("1B")}>1B</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("2B")}>2B</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("3B")}>3B</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("HR")}>HR</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("BB")}>BB</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("IBB")}>IBB</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("HBP")}>HBP</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("SO")}>K</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("1B")}>1B</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("2B")}>2B</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("3B")}>3B</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("HR")}>HR</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("BB")}>BB</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("IBB")}>IBB</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("HBP")}>HBP</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("SO")}>K</button>
 
           {/* 出局型態 */}
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("GO")}>GO</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("FO")}>FO</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("SF")}>SF</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("SH")}>SH</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("DP")}>DP</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("TP")}>TP</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("CS")}>CS</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("E")}>E</button>
-          <button className="px-2 py-1 border rounded" onClick={() => commitResult("FC")}>FC</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("GO")}>GO</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("FO")}>FO</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("SF")}>SF</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("SH")}>SH</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("DP")}>DP</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("TP")}>TP</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("CS")}>CS</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("E")}>E</button>
+          <button type="button"className="px-2 py-1 border rounded" onClick={() => commitResult("FC")}>FC</button>
         </div>
       </div>
     </div>
