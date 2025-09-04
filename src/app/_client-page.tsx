@@ -1386,26 +1386,6 @@ useEffect(() => {
     const info = getNameAndPositions(players, g, pid);
     return info?.name ?? "";
   };
-// —— HalfStepper 內工具 ——
-// 取或建「三線統計」
-const ensureTriple = (nx: any, pid: number) => {
-  nx.stats = nx.stats || {};
-  if (!nx.stats[pid]) nx.stats[pid] = emptyTriple();
-};
-// 安全加總
-const inc = (obj: any, key: string, v: number = 1) => {
-  obj[key] = (Number(obj[key]) || 0) + v;
-};
-// 從逐球推導球數（F 不超過兩好）
-const countFromPitches = (arr: PitchMark[]) => {
-  let b = 0, s = 0;
-  for (const p of arr) {
-    if (p === "B") b++;
-    else if (p === "S") s++;
-    else if (p === "F") { if (s < 2) s++; }
-  }
-  return { balls: b, strikes: s };
-};
 
   // 事件容器
   const ensureInningsEvents = (gg: any, upto: number) => {
@@ -1429,23 +1409,25 @@ const countFromPitches = (arr: PitchMark[]) => {
     return list.length ? list : (g.lineup || []);
   })();
 
-  // stats 小工具
-  const ensureTriple = (nx: any, pid: number) => {
-    nx.stats = nx.stats || {};
-    if (!nx.stats[pid]) nx.stats[pid] = emptyTriple();
-  };
-  const inc = (obj: any, k: string, v = 1) => { obj[k] = toNonNegNum(obj[k]) + v; };
+ // ==== HalfStepper 內的工具（只留一份！）====
+const ensureTriple = (nx: any, pid: number) => {
+  nx.stats = nx.stats || {};
+  if (!nx.stats[pid]) nx.stats[pid] = emptyTriple();
+};
+const inc = (obj: any, k: string, v = 1) => {
+  obj[k] = (Number(obj[k]) || 0) + v;
+};
+// 逐球→球數（F 只補到 2 好）
+const countFromPitches = (arr: PitchMark[]) => {
+  let balls = 0, strikes = 0;
+  for (const p of arr) {
+    if (p === "B") balls++;
+    else if (p === "S") strikes++;
+    else if (p === "F") { if (strikes < 2) strikes++; }
+  }
+  return { balls, strikes };
+};
 
-  // 逐球 → 球數（F 只補到 2 好）
-  const countFromPitches = (arr: PitchMark[]) => {
-    let strikes = 0, balls = 0;
-    for (const p of arr) {
-      if (p === "S") strikes++;
-      else if (p === "B") balls++;
-      else if (p === "F") { if (strikes < 2) strikes++; }
-    }
-    return { balls, strikes };
-  };
 
   // 設/換投手（寫入當前半局）
   const setPitcher = (pid: number) => {
