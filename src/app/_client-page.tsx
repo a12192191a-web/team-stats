@@ -1378,8 +1378,13 @@ const HalfStepper = ({ g }: { g: Game }) => {
     const info = getNameAndPositions(players, g, pid);
     return info?.name ?? "";
   };
-  const positionsOf = (pid?: number) =>
-    (getNameAndPositions(players, g, pid)?.positions || []) as string[];
+// 取某球員守位（安全處理 undefined）
+const positionsOf = (pid?: number): string[] => {
+  if (pid === undefined) return [];          // 先擋掉 undefined
+  const info = getNameAndPositions(players, g, pid);
+  return (info?.positions || []) as string[];
+};
+
 
   const inc = (obj: any, key: string, v = 1) => {
     obj[key] = (Number(obj[key]) || 0) + v;
@@ -1638,7 +1643,10 @@ const HalfStepper = ({ g }: { g: Game }) => {
 
   const outsDisp = "●".repeat(curHalf.outs || 0) + "○".repeat(3 - (curHalf.outs || 0));
   const curPitcherName = curHalf.pitcherId ? nameOf(curHalf.pitcherId) : "";
-  const cantPitch = !offense && (noP || !curHalf.pitcherId || !positionsOf(curHalf.pitcherId).includes("P"));
+const hasPitcher = typeof curHalf.pitcherId === "number";
+const cantPitch =
+  !offense && (noP || !hasPitcher || !positionsOf(curHalf.pitcherId).includes("P"));
+
 
   // --- 小元件：點點列 ---
   const DotRow = ({ label, n, total, colorClass }:
