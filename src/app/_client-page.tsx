@@ -1455,36 +1455,6 @@ const positionsOf = (pid?: number): string[] => {
   const getCurHalf = (nx: any): HalfInningEvent =>
     isTop ? nx.inningsEvents[inningIdx].top : nx.inningsEvents[inningIdx].bot;
 
-// 在 HalfStepper 內新增：用來防止重複前進（同一半局只前進一次）
-const advanceGateRef = useRef<string>("");
-
-// 取得目前半局的唯一 key
-const halfKey = `${g.id}:${inningIdx}:${isTop ? "T" : "B"}`;
-
-// 統一的前進函式（有閘門，避免重複 +2）
-const advanceHalf = () => {
-  if (advanceGateRef.current === halfKey) return; // 已前進過
-  advanceGateRef.current = halfKey;
-  setStep((s) => s + 1);
-};
-
-// 監聽「當前半局出局數」；只要達到 3，就強制前進
-useEffect(() => {
-  const outs = (curHalf?.outs ?? 0);
-  if (outs >= 3) {
-    // 保險一下，把 outs 壓到 3（避免有人手動寫 4 之類）
-    setGames(prev => prev.map(gg => {
-      if (gg.id !== g.id) return gg;
-      const nx: any = { ...gg };
-      if (!nx.inningsEvents?.[inningIdx]) return nx;
-      const half = isTop ? nx.inningsEvents[inningIdx].top : nx.inningsEvents[inningIdx].bot;
-      half.outs = 3 as 0|1|2|3;
-      return nx;
-    }));
-    advanceHalf();
-  }
-  // 依賴包含 halfKey 才能在換半局後重設同一半局的「已前進」判斷
-}, [curHalf?.outs, halfKey]);
 
   // 僅 P 可當投手
   const pitcherOptions = (g.lineup || []).filter(pid => positionsOf(pid).includes("P"));
@@ -1678,6 +1648,30 @@ const hasPitcher = typeof curHalf.pitcherId === "number";
 const cantPitch =
   !offense && (noP || !hasPitcher || !positionsOf(curHalf.pitcherId).includes("P"));
 
+// === 三出局強制換半局（放在 curHalf 之後） ===
+const advanceGateRef = useRef<string>("");
+const halfKey = `${g.id}:${inningIdx}:${isTop ? "T" : "B"}`;
+const advanceHalf = useCallback(() => {
+  if (advanceGateRef.current === halfKey) return; // 同一半局只前進一次
+  advanceGateRef.current = halfKey;
+  setStep(s => s + 1);
+}, [halfKey]);
+
+const outsNow = curHalf?.outs ?? 0;
+useEffect(() => {
+  if (outsNow >= 3) {
+    // 壓到 3，避免有人寫成 4 之類
+    setGames(prev => prev.map(gg2 => {
+      if (gg2.id !== g.id) return gg2;
+      const nx: any = { ...gg2 };
+      if (!nx.inningsEvents?.[inningIdx]) return nx;
+      const half = isTop ? nx.inningsEvents[inningIdx].top : nx.inningsEvents[inningIdx].bot;
+      half.outs = 3 as 0|1|2|3;
+      return nx;
+    }));
+    advanceHalf();
+  }
+}, [outsNow, halfKey, advanceHalf, g.id, inningIdx, isTop]);
 
   // --- 小元件：點點列 ---
   const DotRow = ({ label, n, total, colorClass }:
