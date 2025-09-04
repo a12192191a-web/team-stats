@@ -1622,7 +1622,20 @@ const HalfStepper = ({ g }: { g: Game }) => {
 
   
 const BoxScore = () => {
-  const [modeTab, setModeTab] = useState<"all" | GameMode>("all");
+// 讀取上一次使用者停留的分頁（避免重新掛載時還原成「全部」）
+const [modeTab, setModeTab] = useState<"all" | GameMode>(() => {
+  if (typeof window === "undefined") return "all";
+  const saved = window.sessionStorage.getItem("box_modeTab");
+  return saved === "classic" || saved === "inning" || saved === "all" ? (saved as any) : "all";
+});
+
+// 任何變更都同步到 sessionStorage
+useEffect(() => {
+  try {
+    window.sessionStorage.setItem("box_modeTab", modeTab);
+  } catch {}
+}, [modeTab]);
+
   const filteredGames = games.filter(g =>
     modeTab === "all" ? true : ((g.mode ?? "classic") === modeTab)
   );
