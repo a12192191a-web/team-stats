@@ -1346,14 +1346,25 @@ function isOffenseHalfSimple(g: Game, isTop: boolean) {
   return g.startDefense ? !isTop : isTop;
 }
 
-// ---- 事件版 HalfStepper（逐球＋結果按鈕，修正半局與投手檢查）----
+// ---- 事件版 HalfStepper（逐球自動 BB/K、結果按鈕寫統計、修正跳半局）----
 const HalfStepper = ({ g }: { g: Game }) => {
-  // 半局指標：0=1上,1=1下,2=2上...
-  const [step, setStep] = useState(0);
+  // 半局：0=1上,1=1下,2=2上... － 用 sessionStorage 鎖住，避免重掛回到 1上
+  const [step, setStep] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const key = `step_g_${g.id}`;
+    const v = window.sessionStorage.getItem(key);
+    return v ? (Number(v) || 0) : 0;
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(`step_g_${g.id}`, String(step));
+    }
+  }, [step, g.id]);
+
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
 
-  // 判定此半局是否「我方進攻」
+  // 這半局是否我方進攻（沿用你現有的簡化邏輯）
   const offense =
     typeof (isOffenseHalfSimple) === "function"
       ? isOffenseHalfSimple(g, isTop)
@@ -1365,18 +1376,18 @@ const HalfStepper = ({ g }: { g: Game }) => {
   const nextIdx = (g as any)[batterIdxKey] ?? 0;
   const curBatterId = offense ? (lineupPids[nextIdx] || 0) : 0;
 
-  // 附加輸入（打點 / 自責）
+  // 附加輸入
   const [rbiInput, setRbiInput] = useState(0);
-  const [erInput, setErInput] = useState(0);
+  const [erInput,  setErInput ] = useState(0);
 
-  // 取名工具（你專案已存在 players / getNameAndPositions）
+  // 名稱工具
   const nameOf = (pid?: number) => {
     if (!pid) return "";
     const info = getNameAndPositions(players, g, pid);
     return info?.name ?? "";
   };
 
-  // ---- 事件資料容器：在 g 上動態建立 inningsEvents ----
+  // 事件容器
   const ensureInningsEvents = (gg: any, upto: number) => {
     gg.inningsEvents = gg.inningsEvents ?? [];
     while (gg.inningsEvents.length <= upto) {
@@ -1386,11 +1397,10 @@ const HalfStepper = ({ g }: { g: Game }) => {
       });
     }
   };
-  // 取得「目前半局」的物件（只用 isTop，避免寫到相反半局）
   const getCurHalf = (nx: any) =>
     isTop ? nx.inningsEvents[inningIdx].top : nx.inningsEvents[inningIdx].bot;
 
-  // 投手選單（優先顯示可守 P 的；沒有就整個打線）
+  // 投手選單
   const pitcherOptions = (() => {
     const list = (g.lineup || []).filter(pid => {
       const pos = (getNameAndPositions(players, g, pid)?.positions || []);
@@ -1398,85 +1408,112 @@ const HalfStepper = ({ g }: { g: Game }) => {
     });
     return list.length ? list : (g.lineup || []);
   })();
-// HalfStepper 內新增（位置在 setPitcher 上下皆可）
-const ensureTriple = (nx: any, pid: number) => {
-  nx.stats = nx.stats || {};
-  if (!nx.stats[pid]) nx.stats[pid] = emptyTriple();
-};
 
-  // 設定/更換投手（只影響「目前半局」）
+  // 確保 stats[pid] 存在
+  const ensureTriple = (nx: any, pid: number) => {
+    nx.stats = nx.stats || {};
+    if (!nx.stats[pid]) nx.stats[pid] = emptyTriple();
+  };
+  const inc = (obj: any, k: string, v = 1) => { obj[k] = toNonNegNum(obj[k]) + v; };
+
+  // 逐球 → 球數
+  const countFromPitches = (arr: PitchMark[]) => {
+    let strikes = 0, balls = 0;
+    for (const p of arr) {
+      if (p === "S") strikes++;
+      else if (p === "B") balls++;
+      else if (p === "F") { if (strikes < 2) strikes++; }
+    }
+    return { balls, strikes };
+  };
+
+  // 設定/更換投手（當前半局）
   const setPitcher = (pid: number) => {
     setGames(prev =>
       prev.map(gg => {
         if (gg.id !== g.id) return gg;
         const nx: any = { ...gg };
         ensureInningsEvents(nx, inningIdx);
-        const half = getCurHalf(nx);        // ✅ 固定寫到當前半局
+        const half = getCurHalf(nx);
         half.pitcherId = pid || undefined;
         return nx;
       })
     );
   };
 
-// 逐球：B / S / F
-const addPitch = (mark: PitchMark) => {
-  let noPitcher = false;
-  setGames(prev =>
-    prev.map(gg => {
-      if (gg.id !== g.id) return gg;
-      const nx: any = { ...gg };
-      ensureInningsEvents(nx, inningIdx);
-      const half = getCurHalf(nx); // 當前半局
+  // 逐球：B / S / F（自動 BB / SO）
+  const addPitch = (mark: PitchMark) => {
+    let blocked = false;
+    let autoRes: PAResult | null = null;
 
-      // 守備半局一定要先有投手
-      if (!offense && !half.pitcherId) {
-        noPitcher = true;
-        return nx;
-      }
-
-      // 取得/建立當前打席
-      const batterId = curBatterId;
-      let pa = half.pas[half.pas.length - 1];
-      if (!pa || pa.result !== null) {
-        pa = {
-          batterId,
-          pitcherId: half.pitcherId || 0,
-          pitches: [],
-          result: null,
-          outsAdded: 0,
-          ts: Date.now(),
-        };
-        half.pas.push(pa);
-      }
-
-      // 寫入逐球
-      pa.pitches.push(mark);
-
-      // ★ 讓畫面有反饋：守備半局時同步加投手 PC
-      if (!offense && half.pitcherId) {
-        ensureTriple(nx, half.pitcherId);
-        nx.stats[half.pitcherId].pitching.PC =
-          toNonNegNum(nx.stats[half.pitcherId].pitching.PC) + 1;
-      }
-
-      return nx;
-    })
-  );
-  if (noPitcher) alert("請先選擇當局投手");
-};
-
-
-  // 提交打席結果（K/BB/1B/...），處理出局與輪下一棒/換半局
-  const commitResult = (res: PAResult) => {
-    let shouldAdvanceHalf = false;
     setGames(prev =>
       prev.map(gg => {
         if (gg.id !== g.id) return gg;
         const nx: any = { ...gg };
         ensureInningsEvents(nx, inningIdx);
-        const half = getCurHalf(nx);        // ✅ 固定當前半局
+        const half = getCurHalf(nx);
 
-        // 守備半局若沒投手就忽略（與 addPitch 一致）
+        // 守備半局一定要有投手
+        if (!offense && !half.pitcherId) {
+          blocked = true;
+          return nx;
+        }
+
+        // 取得/建立當前打席
+        const batterId = curBatterId;
+        let pa = half.pas[half.pas.length - 1];
+        if (!pa || pa.result !== null) {
+          pa = {
+            batterId,
+            pitcherId: half.pitcherId || 0,
+            pitches: [],
+            result: null,
+            outsAdded: 0,
+            ts: Date.now(),
+          };
+          half.pas.push(pa);
+        }
+
+        // 寫入逐球
+        pa.pitches.push(mark);
+
+        // 守備半局：可見反饋 → 投手 PC +1
+        if (!offense && half.pitcherId) {
+          ensureTriple(nx, half.pitcherId);
+          inc(nx.stats[half.pitcherId].pitching, "PC", 1);
+        }
+
+        // 判斷是否自動結束打席
+        const { balls, strikes } = countFromPitches(pa.pitches);
+        if (balls >= 4) autoRes = "BB";
+        else if (strikes >= 3) autoRes = "SO";
+
+        return nx;
+      })
+    );
+
+    if (blocked) {
+      alert("請先選擇當局投手");
+      return;
+    }
+    if (autoRes) {
+      // 讓本次逐球完成後再提交結果
+      commitResult(autoRes);
+    }
+  };
+
+  // 提交打席結果（並將數據寫入 stats）
+  const commitResult = (res: PAResult) => {
+    let shouldAdvanceHalf = false;
+
+    setGames(prev =>
+      prev.map(gg => {
+        if (gg.id !== g.id) return gg;
+        const nx: any = { ...gg };
+        ensureInningsEvents(nx, inningIdx);
+        const half = getCurHalf(nx);
+
+        // 守備半局無投手 → 不動作
         if (!offense && !half.pitcherId) return nx;
 
         // 取得/建立當前打席
@@ -1494,13 +1531,59 @@ const addPitch = (mark: PitchMark) => {
           half.pas.push(pa);
         }
 
-        // 寫入結果與出局數
+        // 寫入結果
         pa.result = res;
         pa.outsAdded = outsOf(res);
         if (offense && rbiInput) pa.rbi = rbiInput;
-        if (!offense && erInput) pa.er = erInput;
+        if (!offense && erInput)  pa.er  = erInput;
 
-        // ✅ 出局數夾在 0~3，並收窄型別為 0|1|2|3
+        // ====== 統計寫入（只寫我方可辨識的球員） ======
+        // 我方進攻：寫打者打擊
+        if (offense && batterId) {
+          ensureTriple(nx, batterId);
+          const bat = nx.stats[batterId].batting;
+          inc(bat, "PA", 1);
+          if (isAB(res as any)) inc(bat, "AB", 1);
+
+          switch (res) {
+            case "1B": inc(bat, "H", 1); inc(bat, "1B", 1); break;
+            case "2B": inc(bat, "H", 1); inc(bat, "2B", 1); break;
+            case "3B": inc(bat, "H", 1); inc(bat, "3B", 1); break;
+            case "HR": inc(bat, "H", 1); inc(bat, "HR", 1); break;
+            case "BB": inc(bat, "BB", 1); break;
+            case "IBB": inc(bat, "BB", 1); inc(bat, "IBB", 1); break;
+            case "HBP": inc(bat, "HBP", 1); break;
+            case "SO": inc(bat, "SO", 1); break;
+            case "SF": inc(bat, "SF", 1); break;
+            case "SH": inc(bat, "SH", 1); break;
+            default: break; // GO/FO/DP/TP/E/FC/CS 不額外寫
+          }
+          if (rbiInput) inc(bat, "RBI", rbiInput);
+        }
+
+        // 我方防守：寫投手投球
+        if (!offense && half.pitcherId) {
+          const pid = half.pitcherId;
+          ensureTriple(nx, pid);
+          const pit = nx.stats[pid].pitching;
+
+          // 面對打者 +1
+          inc(pit, "BF", 1);
+
+          switch (res) {
+            case "SO": inc(pit, "SO", 1); break;
+            case "BB": inc(pit, "BB", 1); break;
+            case "IBB": inc(pit, "BB", 1); inc(pit, "IBB", 1); break;
+            case "HBP": inc(pit, "HBP", 1); break;
+            case "1B": case "2B": case "3B": inc(pit, "H", 1); break;
+            case "HR": inc(pit, "H", 1); inc(pit, "HR", 1); break;
+            default: break;
+          }
+          if (erInput) inc(pit, "ER", erInput);
+        }
+        // ====== 統計寫入結束 ======
+
+        // 累出局（收窄型別）
         const newOuts = Math.max(0, Math.min(3, (half.outs ?? 0) + pa.outsAdded)) as 0 | 1 | 2 | 3;
         half.outs = newOuts;
         shouldAdvanceHalf = newOuts >= 3;
@@ -1514,13 +1597,13 @@ const addPitch = (mark: PitchMark) => {
       })
     );
 
-    // 重置附加輸入
+    // 清空輸入
     if (offense) setRbiInput(0); else setErInput(0);
-    // 三出局自動換下一半局
+    // 三出局 → 下一半局（step 已被 sessionStorage 鎖住，不會跳回）
     if (shouldAdvanceHalf) setStep(s => s + 1);
   };
 
-  // 目前半局（渲染用）
+  // 當前半局（渲染）
   const curHalf = (() => {
     const gg: any = g as any;
     if (!gg.inningsEvents || !gg.inningsEvents[inningIdx]) {
@@ -1547,7 +1630,7 @@ const addPitch = (mark: PitchMark) => {
         </div>
       </div>
 
-      {/* 投手（僅防守半局需要） */}
+      {/* 投手（僅防守半局） */}
       {!offense && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm">投手：</div>
@@ -1563,7 +1646,7 @@ const addPitch = (mark: PitchMark) => {
         </div>
       )}
 
-      {/* 當局打者（進攻半局顯示） */}
+      {/* 當局打者（進攻半局） */}
       {offense && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm">打者：</div>
@@ -1584,7 +1667,7 @@ const addPitch = (mark: PitchMark) => {
         <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("B")}>B</button>
         <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("S")}>S</button>
         <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("F")}>F</button>
-        <div className="text-xs text-slate-500">（每按一球會累計 PC）</div>
+        <div className="text-xs text-slate-500">（4 壞自動保送、3 好自動三振）</div>
       </div>
 
       {/* 附加輸入（RBI/ER） */}
@@ -1604,11 +1687,10 @@ const addPitch = (mark: PitchMark) => {
         )}
       </div>
 
-      {/* 打席結果按鈕 */}
+      {/* 打席結果按鈕（全部會真的寫進 stats） */}
       <div className="space-y-2">
         <div className="text-sm">打席結果：</div>
         <div className="grid grid-cols-8 gap-2">
-          {/* 安打＆保送 */}
           <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("1B")}>1B</button>
           <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("2B")}>2B</button>
           <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("3B")}>3B</button>
@@ -1618,7 +1700,6 @@ const addPitch = (mark: PitchMark) => {
           <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("HBP")}>HBP</button>
           <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("SO")}>K</button>
 
-          {/* 出局型態 */}
           <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("GO")}>GO</button>
           <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("FO")}>FO</button>
           <button type="button" className="px-2 py-1 border rounded" onClick={() => commitResult("SF")}>SF</button>
@@ -1633,6 +1714,7 @@ const addPitch = (mark: PitchMark) => {
     </div>
   );
 };
+
 
 
 
