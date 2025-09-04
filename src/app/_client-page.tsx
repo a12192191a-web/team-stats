@@ -21,7 +21,7 @@ function useHotUpdateWithAutosave(players: any, games: any) {
     try {
       if (!sessionStorage.getItem(SS_ONCE)) {
         sessionStorage.setItem(SS_ONCE, "1");
-        location.reload();
+      alert("有新版本，請手動重新整理頁面");
       }
     } catch {}
   }, []);
@@ -46,7 +46,7 @@ function useHotUpdateWithAutosave(players: any, games: any) {
           } catch {}
 
           // 再自動刷新頁面
-          location.reload();
+         alert("有新版本，請手動重新整理頁面");
         }
       } catch {}
     };
