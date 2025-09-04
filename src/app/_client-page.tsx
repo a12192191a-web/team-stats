@@ -1298,6 +1298,14 @@ const HalfStepper = ({ g }: { g: Game }) => {
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
   const offense = isOffenseHalfSimple(g, isTop);
+  // 先攻時要用到的打線與當局打者
+const lineupPids = (g.lineup || []).filter(Boolean);
+const [batterIdx, setBatterIdx] = useState(0); // 0..8 對應 1~9 棒
+useEffect(() => { if (!offense) setBatterIdx(0); }, [offense, g.id]);
+
+const curPid = lineupPids[batterIdx] || 0;
+const curName = curPid ? pidToName(g, curPid) : "";
+
 
   const pCandidates = g.lineup.filter(pid => (getNameAndPositions(players, g, pid).positions || []).includes("P"));
   const [pitcherPid, setPitcherPidLocal] = useState<number | ''>(pCandidates[0] ?? '');
@@ -1337,6 +1345,42 @@ const HalfStepper = ({ g }: { g: Game }) => {
           <option value="O">先攻</option>
         </select>
       </div>
+{/* 只有先攻時顯示：當局打者選單 + 名單 pill */}
+{offense && (
+  <div className="flex flex-wrap items-center gap-2 mb-2">
+    <div className="text-sm">當局打者：</div>
+    <select
+      className="text-sm border rounded px-2 py-1"
+      value={batterIdx}
+      onChange={(e) => setBatterIdx(Number(e.target.value))}
+      disabled={g.locked || lineupPids.length === 0}
+    >
+      {lineupPids.length === 0
+        ? <option value={0}>請先設定打線</option>
+        : lineupPids.map((pid, i) => (
+            <option key={pid} value={i}>
+              {i + 1}. {pidToName(g, pid)}
+            </option>
+          ))
+      }
+    </select>
+
+    {/* 快速切換用的名字 pill（可點） */}
+    <div className="flex flex-wrap gap-1">
+      {lineupPids.map((pid, i) => (
+        <button
+          key={pid}
+          type="button"
+          onClick={() => setBatterIdx(i)}
+          className={`text-xs px-2 py-1 rounded border ${i===batterIdx ? "bg-black text-white" : "bg-white"}`}
+          disabled={g.locked}
+        >
+          {i + 1}. {pidToName(g, pid)}
+        </button>
+      ))}
+    </div>
+  </div>
+)}
 
       {offense ? (
         <>
