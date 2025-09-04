@@ -1406,7 +1406,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
       if (gg.id !== g.id) return gg;
       const nx: any = { ...gg };
       ensureInningsEvents(nx, inningIdx);
-      const half = getHalf(nx, inningIdx, offense ? isTop : !isTop); // ✅ 用 offense 確定方向
+const half = getHalf(nx, inningIdx, isTop); // 針對目前半局
 
       half.pitcherId = pid || undefined;
       return nx;
@@ -1420,13 +1420,12 @@ const HalfStepper = ({ g }: { g: Game }) => {
       if (gg.id !== g.id) return gg;
       const nx: any = { ...gg };
       ensureInningsEvents(nx, inningIdx);
-     const half = getHalf(nx, inningIdx, offense ? isTop : !isTop); // ✅ 用 offense 確定方向
+    const half = getHalf(nx, inningIdx, isTop);
 
 
       // 防守半局，沒有投手就不能記球
-      if (!offense && !half.pitcherId) return nx;if (!offense && !half.pitcherId) {
-  return nx; // 沒投手就直接回傳，不設 alert
-}
+  if (!offense && !half.pitcherId) return nx;
+
 
       // 取得/建立當前 PA（若上一個 PA 已有 result，開新 PA）
       const batterId = curBatterId;
@@ -1456,7 +1455,7 @@ const HalfStepper = ({ g }: { g: Game }) => {
       if (gg.id !== g.id) return gg;
       const nx: any = { ...gg };
       ensureInningsEvents(nx, inningIdx);
-     const half = getHalf(nx, inningIdx, offense ? isTop : !isTop); // ✅ 用 offense 確定方向
+    const half = getHalf(nx, inningIdx, isTop);
 
 
 
