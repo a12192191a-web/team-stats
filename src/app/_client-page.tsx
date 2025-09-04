@@ -711,7 +711,7 @@ async function hardRefresh() {
 
 
 const Navbar = () => (
-<div className="fixed top-0 left-0 right-0 z-[1000] bg-[#08213A] text-white flex items-center gap-4 px-4 py-2">
+ <div className="fixed top-0 left-0 right-0 z-[1000] bg-[#08213A] text-white flex items-center gap-4 px-4 py-2">
     <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
     <div className="font-bold tracking-wide">RS Baseball Manager</div>
     <div className="ml-auto flex flex-wrap gap-2">
@@ -2238,7 +2238,7 @@ return (
           {/* 逐局比分 */}
           <div className="overflow-x-auto md:overflow-x-visible">
 <table className="border text-sm w-full">
-<thead className="sticky top-16 md:top-20 bg-white z-[500]">
+<thead className="sticky top-16 md:top-20 bg-white z-[500] pointer-events-none">
                 <tr>{[1,2,3,4,5,6,7,8,9].map((n) => <th key={n} className="border px-2 py-1 text-center">{n}</th>)}
                   <th className="border px-2 py-1 text-center">R</th>
                   <th className="border px-2 py-1 text-center">H</th>
