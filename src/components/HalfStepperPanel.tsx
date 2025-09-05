@@ -67,6 +67,15 @@ const countFromPitches = (arr: PitchMark[]) => {
   return { balls, strikes };
 };
 
+// 根據結果與是否有失誤，計算這個打席應該給的 RBI（若你沒手動填 pa.rbi）
+const calcRBI = (res: PAResult, runs: number, flaggedError: boolean) => {
+  if (!runs) return 0;
+  if (flaggedError) return 0; // 失誤造成的得分不自動給 RBI（你可手動填）
+  if (["DP", "TP", "CS", "SO"].includes(res)) return 0;
+  // SF / SH / BB / IBB / HBP / 安打 / HR 都給實際得分數
+  return runs;
+};
+
 export default function HalfStepperPanel({ g, players, setGames }: Props) {
   /** ===== step / inning / offense 判斷 ===== */
   const [step, setStep] = useState<number>(() => {
@@ -148,7 +157,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     return { bases: [r1, r2, r3], runs };
   }
   function applyPlan(b: BaseState, plan?: AdvancePlan): { bases: BaseState; runs: number } {
-   let runs = 0; const bases = cloneBases(b);
+    let runs = 0; const bases = cloneBases(b);
     const step = (from: 1|2|3, adv: number) => {
       if (!adv) return;
       if (!bases[from-1]) return;
@@ -251,106 +260,88 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     }));
   };
 
-const addPitch = (mark: PitchMark) => {
-  let missingPitcher = false;
-  let shouldNextHalf = false;
+  const addPitch = (mark: PitchMark) => {
+    let missingPitcher = false;
+    let shouldNextHalf = false;
 
-  setGames(prev => prev.map((ggx: any) => {
-    if (ggx.id !== g.id) return ggx;
-    const nx: any = structuredClone(ggx);
-    ensureInningsEvents(nx, inningIdx);
-    const half = getCurHalf(nx);
+    setGames(prev => prev.map((ggx: any) => {
+      if (ggx.id !== g.id) return ggx;
+      const nx: any = structuredClone(ggx);
+      ensureInningsEvents(nx, inningIdx);
+      const half = getCurHalf(nx);
 
-    // 防守半局需先選投手
-    if (!offense && !half.pitcherId) { missingPitcher = true; return nx; }
+      // 防守半局需先選投手
+      if (!offense && !half.pitcherId) { missingPitcher = true; return nx; }
 
-    // 取/建當前打席
-    let pa = half.pas[half.pas.length - 1] as PlateAppearance | undefined;
-    if (!pa || pa.result !== null) {
-      pa = { batterId: curBatterId, pitcherId: half.pitcherId || 0, pitches: [], result: null, outsAdded: 0, ts: Date.now() };
-      half.pas.push(pa);
-    }
-    // 若此打席已結束，直接不再紀錄球數（保險）
-    if (pa.result !== null) return nx;
-
-    // 記錄當球
-    pa.pitches.push(mark);
-
-    // 防守半局：逐球加 PC
-    if (!offense && half.pitcherId) {
-      nx.stats = nx.stats || {};
-      if (!nx.stats[half.pitcherId]) nx.stats[half.pitcherId] = emptyTriple();
-      inc(nx.stats[half.pitcherId].pitching, "PC", 1);
-    }
-
-    // 檢查是否達成 4B or 3S
-    const { balls, strikes } = countFromPitches(pa.pitches);
-    const autoRes: PAResult | null = balls >= 4 ? "BB" : (strikes >= 3 ? "SO" : null);
-
-    if (autoRes) {
-      // === 在同一次更新內「直接結束打席」===
-      pa.result = autoRes;
-      pa.outsAdded = outsOf(autoRes);
-
-      // 壘包與得分
-      nx.inningsEvents = nx.inningsEvents || [];
-      const container = getCurHalf(nx);
-      container.bases = container.bases || [false,false,false];
-
-      const preBases: BaseState = cloneBases(container.bases);
-      const { bases: postBases, runs, earnedRuns, flaggedError } =
-        applyPlayToBases(preBases, autoRes /* BB/SO 不吃 advPlan */);
-
-      (pa as any).baseBefore = preBases;
-      (pa as any).baseAfter  = postBases;
-      (pa as any).runs       = runs;
-      (pa as any).earnedRuns = earnedRuns;
-      (pa as any).hasError   = flaggedError;
-
-      container.bases = postBases;
-
-      // 打者統計（進攻）
-      if (offense && curBatterId) {
-        nx.stats = nx.stats || {};
-        if (!nx.stats[curBatterId]) nx.stats[curBatterId] = emptyTriple();
-        const bat = nx.stats[curBatterId].batting;
-        if (autoRes === "BB") inc(bat, "BB");
-        if (autoRes === "SO") inc(bat, "SO");
-        if (runs) inc(bat, "RBI", runs);
+      // 取/建當前打席
+      let pa = half.pas[half.pas.length - 1] as PlateAppearance | undefined;
+      if (!pa || pa.result !== null) {
+        pa = { batterId: curBatterId, pitcherId: half.pitcherId || 0, pitches: [], result: null, outsAdded: 0, ts: Date.now() };
+        half.pas.push(pa);
       }
+      // 若此打席已結束，直接不再紀錄球數（保險）
+      if (pa.result !== null) return nx;
 
-      // 投手統計（防守）
+      // 記錄當球
+      pa.pitches.push(mark);
+
+      // 防守半局：逐球加 PC（即時 UI 用；重算會覆蓋）
       if (!offense && half.pitcherId) {
         nx.stats = nx.stats || {};
         if (!nx.stats[half.pitcherId]) nx.stats[half.pitcherId] = emptyTriple();
-        const pit = nx.stats[half.pitcherId].pitching;
-        if (autoRes === "BB") inc(pit, "BB");
-        if (autoRes === "SO") inc(pit, "K");
-        if (isAB(autoRes)) inc(pit, "AB");
-        if (earnedRuns) inc(pit, "ER", earnedRuns);
-        if (pa.outsAdded) inc(pit, "IP", pa.outsAdded / 3);
+        inc(nx.stats[half.pitcherId].pitching, "PC", 1);
       }
 
-      // 出局與輪到下一棒 / 下一半局
-      const newOuts = Math.max(0, Math.min(3, (half.outs ?? 0) + pa.outsAdded)) as 0|1|2|3;
-      half.outs = newOuts;
-      shouldNextHalf = newOuts >= 3;
-      if (offense) {
-        const len = lineupPids.length || 9;
-        (nx as any)[batterIdxKey] = (nextIdx + 1) % len;
+      // 檢查是否達成 4B or 3S
+      const { balls, strikes } = countFromPitches(pa.pitches);
+      const autoRes: PAResult | null = balls >= 4 ? "BB" : (strikes >= 3 ? "SO" : null);
+
+      if (autoRes) {
+        // === 在同一次更新內「直接結束打席」===
+        pa.result = autoRes;
+        pa.outsAdded = outsOf(autoRes);
+
+        // 壘包與得分
+        nx.inningsEvents = nx.inningsEvents || [];
+        const container = getCurHalf(nx);
+        container.bases = container.bases || [false,false,false];
+
+        const preBases: BaseState = cloneBases(container.bases);
+        const { bases: postBases, runs, earnedRuns, flaggedError } =
+          applyPlayToBases(preBases, autoRes /* BB/SO 不吃 advPlan */);
+
+        (pa as any).baseBefore = preBases;
+        (pa as any).baseAfter  = postBases;
+        (pa as any).runs       = runs;
+        (pa as any).earnedRuns = earnedRuns;
+        (pa as any).hasError   = flaggedError;
+
+        container.bases = postBases;
+
+        // 出局與輪到下一棒 / 下一半局
+        const newOuts = Math.max(0, Math.min(3, (half.outs ?? 0) + pa.outsAdded)) as 0|1|2|3;
+        half.outs = newOuts;
+        shouldNextHalf = newOuts >= 3;
+        if (offense) {
+          const len = lineupPids.length || 9;
+          (nx as any)[batterIdxKey] = (nextIdx + 1) % len;
+        }
+
+        // 回傳「重算後」的 nx，確保統計一致
+        return recomputeAllStatsFromEvents(nx);
       }
-    }
 
-    return nx;
-  }));
+      // 只是加一顆球：回傳 nx（PC 已即時累加，之後 commitResult 時仍會重算）
+      return nx;
+    }));
 
-  if (missingPitcher) { alert("請先選擇當局投手"); return; }
+    if (missingPitcher) { alert("請先選擇當局投手"); return; }
 
-  // 重置本次可選輸入與推進設定（自動結束後）
-  setAdvPlan({});
-  if (offense) setRbiInput(0); else setErInput(0);
-  if (shouldNextHalf) setStep(s => s + 1);
-};
+    // 重置本次可選輸入與推進設定（自動結束後）
+    setAdvPlan({});
+    if (offense) setRbiInput(0); else setErInput(0);
+    if (shouldNextHalf) setStep(s => s + 1);
+  };
 
   const commitResult = (res: PAResult) => {
     let turnNextHalf = false;
@@ -392,45 +383,6 @@ const addPitch = (mark: PitchMark) => {
 
       container.bases = postBases;
 
-      // 打者統計（進攻）
-      if (offense && curBatterId) {
-        nx.stats = nx.stats || {};
-        if (!nx.stats[curBatterId]) nx.stats[curBatterId] = emptyTriple();
-        const bat = nx.stats[curBatterId].batting;
-        switch (res) {
-          case "1B": inc(bat, "1B"); break;
-          case "2B": inc(bat, "2B"); break;
-          case "3B": inc(bat, "3B"); break;
-          case "HR": inc(bat, "HR"); break;
-          case "BB": case "IBB": inc(bat, "BB"); break;
-          case "HBP": inc(bat, "HBP"); break;
-          case "SO": inc(bat, "SO"); break;
-          case "GO": inc(bat, "GO"); break;
-          case "FO": inc(bat, "FO"); break;
-          case "SF": inc(bat, "SF"); break;
-          case "SH": inc(bat, "SH"); break;
-        }
-        // 自動 RBI（若未手動輸入）
-        if (!rbiInput && runs) inc(bat, "RBI", runs);
-        // 手動輸入時已在上方寫入 pa.rbi，總結表若讀 bat.RBI 也一起加
-        if (rbiInput) inc(bat, "RBI", rbiInput);
-      }
-
-      // 投手統計（防守）
-      if (!offense && half.pitcherId) {
-        nx.stats = nx.stats || {};
-        if (!nx.stats[half.pitcherId]) nx.stats[half.pitcherId] = emptyTriple();
-        const pit = nx.stats[half.pitcherId].pitching;
-        if (["1B","2B","3B","HR"].includes(res)) inc(pit, "H");
-        if (res === "HR") inc(pit, "HR");
-        if (res === "BB" || res === "IBB") inc(pit, "BB");
-        if (res === "SO") inc(pit, "K");
-        if (isAB(res)) inc(pit, "AB");
-        const erToAdd = erInput || earnedRuns || 0;
-        if (erToAdd) inc(pit, "ER", erToAdd);
-        if (pa.outsAdded) inc(pit, "IP", pa.outsAdded / 3);
-      }
-
       // 換棒 / 換半局
       const newOuts = Math.max(0, Math.min(3, (half.outs ?? 0) + pa.outsAdded)) as 0|1|2|3;
       half.outs = newOuts;
@@ -440,7 +392,8 @@ const addPitch = (mark: PitchMark) => {
         (nx as any)[batterIdxKey] = (nextIdx + 1) % len;
       }
 
-      return nx;
+      // 回傳「重算後」的 nx，所有統計由事件推導
+      return recomputeAllStatsFromEvents(nx);
     }));
 
     if (offense) setRbiInput(0); else setErInput(0);
@@ -484,7 +437,13 @@ const addPitch = (mark: PitchMark) => {
             if (r==="FO") addBatter(batter, "FO");
             if (r==="SF") addBatter(batter, "SF");
             if (r==="SH") addBatter(batter, "SH");
-            if (pa.runs) addBatter(batter, "RBI", pa.runs);
+
+            // RBI：先用手動 pa.rbi；沒有就由規則推
+            const rbiToAdd =
+              typeof pa.rbi === "number"
+                ? pa.rbi
+                : calcRBI(r, pa.runs || 0, !!pa.hasError);
+            if (rbiToAdd) addBatter(batter, "RBI", rbiToAdd);
           }
 
           if (ppid) {
@@ -494,7 +453,11 @@ const addPitch = (mark: PitchMark) => {
             if (r === "SO") addPitcher(ppid, "K");
             if (isAB(r)) addPitcher(ppid, "AB");
             if (pa.outsAdded) addPitcher(ppid, "IP", pa.outsAdded/3);
-            if (pa.earnedRuns) addPitcher(ppid, "ER", pa.earnedRuns);
+
+            // ER：先用手動 pa.er；沒有就用 pa.earnedRuns（applyPlayToBases 算出來）
+            const erToAdd =
+              typeof pa.er === "number" ? pa.er : (pa.earnedRuns || 0);
+            if (erToAdd) addPitcher(ppid, "ER", erToAdd);
           }
         }
       }
