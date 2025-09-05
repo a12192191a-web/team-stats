@@ -90,6 +90,12 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   }, [step, g.id]);
 
   const inningIdx = Math.floor(step / 2);
+  const manualNavRef = useRef(false);
+  const goToStep = (newStep: number) => {
+    manualNavRef.current = true;
+    setStep(s => Math.max(0, Math.min(17, newStep)));
+  };
+
   const isTop = (step % 2) === 0;
   const offense = g.startDefense ? !isTop : isTop; // 先守：上守下攻；先攻相反
   // 儲存/結束後鎖定（只讀）；支援多種旗標名稱
@@ -538,6 +544,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
 
   // 若目前 step 指向的半局已達 3 出局，連續跳到第一個尚未結束的半局
   useEffect(() => {
+    if (manualNavRef.current) { manualNavRef.current = false; return; }
     let s = step;
     let guard = 0;
     const getHalf = (st: number) => {
@@ -580,8 +587,8 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
           <span className="text-sm text-slate-600">出局：{outsDisp}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => Math.max(0, s - 1))}>上一半局</button>
-          <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => s + 1)}>下一半局</button>
+          <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => goToStep(step - 1)}>上一半局</button>
+          <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => goToStep(step + 1)}>下一半局</button>
         </div>
       </div>
 
@@ -595,7 +602,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
             <button
               key={i}
               type="button"
-              onClick={() => setStep(i)}
+              onClick={() => goToStep(i)}
               className={`text-xs px-2 py-1 rounded border ${active ? "bg-black text-white" : ""}`}
               title={`${inn}局${top ? "上" : "下"}`}
             >
