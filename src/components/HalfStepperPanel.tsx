@@ -364,8 +364,6 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       return nx;
     }));
 
-    if (missingPitcher) { alert("請先選擇當局投手"); return; }
-
     // 重置本次可選輸入與推進設定（自動結束後）
     setAdvPlan({});
     if (offense) setRbiInput(0); else setErInput(0);
