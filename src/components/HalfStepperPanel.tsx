@@ -590,14 +590,14 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
          <button
               type="button"
                onClick={() => goToStep(step - 1)}
-               className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 shadow hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95"
+               className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 border border-slate-300 hover:border-slate-400 shadow hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95"
               >
                上一半局
               </button>
              <button
               type="button"
                onClick={() => goToStep(step + 1)}
-               className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 shadow hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95"
+               className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 border border-slate-300 hover:border-slate-400 shadow hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95"
               >
                下一半局
              </button>
@@ -618,7 +618,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   className={`text-xs px-2 py-1.5 rounded-md shadow-sm transition-all duration-300 hover:scale-105 active:scale-95 ${
     active
       ? "bg-gradient-to-r from-black to-gray-800 text-white shadow-md"
-      : "bg-white border hover:bg-slate-100"
+      : "bg-white border border-slate-300 hover:bg-slate-100 hover:border-slate-400"
   }`}
   title={`${inn}局${top ? "上" : "下"}`}
 >
@@ -633,7 +633,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       {!offense && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm">投手：</div>
-          <select className="text-sm border rounded-md px-2 py-1 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300 transition-colors" value={curHalf.pitcherId || 0} onChange={(e) => setPitcher(Number(e.target.value))} disabled={!editable}>
+          <select className="text-sm border border-slate-300 rounded-md px-2 py-1 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition-colors" value={curHalf.pitcherId || 0} onChange={(e) => setPitcher(Number(e.target.value))} disabled={!editable}>
             <option value={0}>（選擇投手）</option>
             {pitcherOptions.map((pid: number) => <option key={pid} value={pid}>{nameOf(pid)}</option>)}
           </select>
@@ -661,7 +661,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   type="button"
   onClick={() => addPitch("B")}
   disabled={!editable}
-  className="px-4 py-1.5 rounded-lg font-semibold bg-green-100 text-green-700 hover:bg-green-200 shadow transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
+  className="px-4 py-1.5 rounded-lg font-semibold bg-green-100 text-green-700 hover:bg-green-200 ring-1 ring-inset ring-slate-300 hover:ring-slate-400 shadow transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
 >
   B
 </button>
@@ -670,7 +670,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   type="button"
   onClick={() => addPitch("S")}
   disabled={!editable}
-  className="px-4 py-1.5 rounded-lg font-semibold bg-yellow-100 text-yellow-700 hover:bg-yellow-200 shadow transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
+  className="px-4 py-1.5 rounded-lg font-semibold bg-yellow-100 text-yellow-700 hover:bg-yellow-200 ring-1 ring-inset ring-slate-300 hover:ring-slate-400 shadow transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
 >
   S
 </button>
@@ -678,7 +678,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   type="button"
   onClick={() => addPitch("F")}
   disabled={!editable}
-  className="px-4 py-1.5 rounded-lg font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200 shadow transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
+  className="px-4 py-1.5 rounded-lg font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200 ring-1 ring-inset ring-slate-300 hover:ring-slate-400 shadow transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
 >
   F
 </button>
@@ -722,7 +722,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
               <label key={k} className="inline-flex items-center gap-1">
                 {label}
                 <select
-                  className="border rounded-md px-1.5 py-1 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300 transition-colors"
+                  className="border border-slate-300 rounded-md px-1.5 py-1 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition-colors"
                   onChange={e => setAdv(k as keyof AdvancePlan, Number(e.target.value) as 0|1|2|3|4)}
                   defaultValue={0}
                 >
@@ -735,7 +735,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
               </label>
             ))}
             <button type="button"
-  className="ml-2 px-3 py-1 rounded-md bg-gradient-to-r from-slate-50 to-slate-100 border shadow-sm hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
+  className="ml-2 px-3 py-1 rounded-md bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-300 hover:border-slate-400 shadow-sm hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
   onClick={() => setAdvPlan({})} disabled={!editable}>清除推進</button>
           </div>
           <div className="text-[11px] text-slate-400">＊GO/FO/SO/CS/DP/TP 等出局類才會套用；SF/SH、安打/四死球已內建強迫或規則推進。</div>
@@ -766,7 +766,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   key={k}
   onClick={() => commitResult(k as PAResult)}
   disabled={!editable}
-  className="px-3 py-1.5 rounded-md bg-gradient-to-r from-slate-50 to-slate-100 border shadow-sm hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
+  className="px-3 py-1.5 rounded-md bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-300 hover:border-slate-400 shadow-sm hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
 >
   {k}
 </button>
@@ -808,7 +808,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
               </div>
               <div className="flex items-center gap-1">
                 <select
-                  className="border rounded-md px-1.5 py-1 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300 transition-colors"
+                  className="border border-slate-300 rounded-md px-1.5 py-1 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 transition-colors"
                   defaultValue={ev.result ?? ""}
                   onChange={(e) => {
                     const newRes = e.target.value as PAResult;
@@ -837,7 +837,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
 
                 <button
                   type="button"
-                  className="px-2.5 py-1 rounded-md bg-white border shadow-sm hover:bg-red-50 hover:shadow-md transition-all duration-300 active:scale-95"
+                  className="px-2.5 py-1 rounded-md bg-white border border-slate-300 hover:border-slate-400 shadow-sm hover:bg-red-50 hover:shadow-md transition-all duration-300 active:scale-95"
                   onClick={() => {
                     const ok = window.confirm(`刪除第 ${idx+1} 個事件？`);
                     if (!ok) return;
