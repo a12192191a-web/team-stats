@@ -251,43 +251,106 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     }));
   };
 
-  const addPitch = (mark: PitchMark) => {
-    let missingPitcher = false;
-    let autoRes: PAResult | null = null;
+const addPitch = (mark: PitchMark) => {
+  let missingPitcher = false;
+  let shouldNextHalf = false;
 
-    setGames(prev => prev.map((ggx: any) => {
-      if (ggx.id !== g.id) return ggx;
-      const nx: any = structuredClone(ggx);
-      ensureInningsEvents(nx, inningIdx);
-      const half = getCurHalf(nx);
+  setGames(prev => prev.map((ggx: any) => {
+    if (ggx.id !== g.id) return ggx;
+    const nx: any = structuredClone(ggx);
+    ensureInningsEvents(nx, inningIdx);
+    const half = getCurHalf(nx);
 
-      if (!offense && !half.pitcherId) { missingPitcher = true; return nx; }
+    // 防守半局需先選投手
+    if (!offense && !half.pitcherId) { missingPitcher = true; return nx; }
 
-      // 建立/取當前打席
-      let pa = half.pas[half.pas.length - 1] as PlateAppearance | undefined;
-      if (!pa || pa.result !== null) {
-        pa = { batterId: curBatterId, pitcherId: half.pitcherId || 0, pitches: [], result: null, outsAdded: 0, ts: Date.now() };
-        half.pas.push(pa);
+    // 取/建當前打席
+    let pa = half.pas[half.pas.length - 1] as PlateAppearance | undefined;
+    if (!pa || pa.result !== null) {
+      pa = { batterId: curBatterId, pitcherId: half.pitcherId || 0, pitches: [], result: null, outsAdded: 0, ts: Date.now() };
+      half.pas.push(pa);
+    }
+    // 若此打席已結束，直接不再紀錄球數（保險）
+    if (pa.result !== null) return nx;
+
+    // 記錄當球
+    pa.pitches.push(mark);
+
+    // 防守半局：逐球加 PC
+    if (!offense && half.pitcherId) {
+      nx.stats = nx.stats || {};
+      if (!nx.stats[half.pitcherId]) nx.stats[half.pitcherId] = emptyTriple();
+      inc(nx.stats[half.pitcherId].pitching, "PC", 1);
+    }
+
+    // 檢查是否達成 4B or 3S
+    const { balls, strikes } = countFromPitches(pa.pitches);
+    const autoRes: PAResult | null = balls >= 4 ? "BB" : (strikes >= 3 ? "SO" : null);
+
+    if (autoRes) {
+      // === 在同一次更新內「直接結束打席」===
+      pa.result = autoRes;
+      pa.outsAdded = outsOf(autoRes);
+
+      // 壘包與得分
+      nx.inningsEvents = nx.inningsEvents || [];
+      const container = getCurHalf(nx);
+      container.bases = container.bases || [false,false,false];
+
+      const preBases: BaseState = cloneBases(container.bases);
+      const { bases: postBases, runs, earnedRuns, flaggedError } =
+        applyPlayToBases(preBases, autoRes /* BB/SO 不吃 advPlan */);
+
+      (pa as any).baseBefore = preBases;
+      (pa as any).baseAfter  = postBases;
+      (pa as any).runs       = runs;
+      (pa as any).earnedRuns = earnedRuns;
+      (pa as any).hasError   = flaggedError;
+
+      container.bases = postBases;
+
+      // 打者統計（進攻）
+      if (offense && curBatterId) {
+        nx.stats = nx.stats || {};
+        if (!nx.stats[curBatterId]) nx.stats[curBatterId] = emptyTriple();
+        const bat = nx.stats[curBatterId].batting;
+        if (autoRes === "BB") inc(bat, "BB");
+        if (autoRes === "SO") inc(bat, "SO");
+        if (runs) inc(bat, "RBI", runs);
       }
-      pa.pitches.push(mark);
 
-      // 防守半局：逐球加 PC
+      // 投手統計（防守）
       if (!offense && half.pitcherId) {
         nx.stats = nx.stats || {};
         if (!nx.stats[half.pitcherId]) nx.stats[half.pitcherId] = emptyTriple();
-        inc(nx.stats[half.pitcherId].pitching, "PC", 1);
+        const pit = nx.stats[half.pitcherId].pitching;
+        if (autoRes === "BB") inc(pit, "BB");
+        if (autoRes === "SO") inc(pit, "K");
+        if (isAB(autoRes)) inc(pit, "AB");
+        if (earnedRuns) inc(pit, "ER", earnedRuns);
+        if (pa.outsAdded) inc(pit, "IP", pa.outsAdded / 3);
       }
 
-      // 4 壞 / 3 好 自動結束
-      const { balls, strikes } = countFromPitches(pa.pitches);
-      if (balls >= 4) autoRes = "BB";
-      else if (strikes >= 3) autoRes = "SO";
-      return nx;
-    }));
+      // 出局與輪到下一棒 / 下一半局
+      const newOuts = Math.max(0, Math.min(3, (half.outs ?? 0) + pa.outsAdded)) as 0|1|2|3;
+      half.outs = newOuts;
+      shouldNextHalf = newOuts >= 3;
+      if (offense) {
+        const len = lineupPids.length || 9;
+        (nx as any)[batterIdxKey] = (nextIdx + 1) % len;
+      }
+    }
 
-    if (missingPitcher) { alert("請先選擇當局投手"); return; }
-    if (autoRes) commitResult(autoRes);
-  };
+    return nx;
+  }));
+
+  if (missingPitcher) { alert("請先選擇當局投手"); return; }
+
+  // 重置本次可選輸入與推進設定（自動結束後）
+  setAdvPlan({});
+  if (offense) setRbiInput(0); else setErInput(0);
+  if (shouldNextHalf) setStep(s => s + 1);
+};
 
   const commitResult = (res: PAResult) => {
     let turnNextHalf = false;
