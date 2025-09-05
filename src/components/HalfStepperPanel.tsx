@@ -93,10 +93,6 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
   const offense = g.startDefense ? !isTop : isTop; // 先守：上守下攻；先攻相反
-  // 是否鎖定只讀（儲存後不可編輯）：支援多種欄位名稱
-  const locked: boolean = !!(g?.locked || g?.isLocked || g?.final || g?.isFinal || g?.saved || g?.readonly);
-  const editable = !locked;
-
 
   const lineupPids: number[] = (g.lineup || []).filter((pid: number) => !!pid);
   const batterIdxKey: "nextBatterIdxTop" | "nextBatterIdxBot" = isTop ? "nextBatterIdxTop" : "nextBatterIdxBot";
@@ -114,6 +110,34 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     return { name: snap?.name ?? `#${pid}`, positions: snap?.positions ?? [] };
   };
   const nameOf = (pid?: number): string => (pid ? getNameAndPositions(g, pid).name : "");
+
+  /** ===== 自動沿用上局投手（防守半局） ===== */
+  const defenseHalfIsTop = g.startDefense ? true : false;
+  function findLastDefensePitcher(gg2: any, idx: number): number | undefined {
+    if (!gg2?.inningsEvents) return undefined;
+    const key = defenseHalfIsTop ? 'top' : 'bot';
+    for (let i = idx - 1; i >= 0; i--) {
+      const h = gg2.inningsEvents[i]?.[key];
+      if (h?.pitcherId) return h.pitcherId;
+    }
+    return undefined;
+  }
+  function ensureCurrentPitcher(setter: (fn: any) => any) {
+    if (offense) return; // 只有防守半局需要投手
+    const curPid = curHalf?.pitcherId;
+    if (curPid) return;
+    const last = findLastDefensePitcher(g, inningIdx);
+    if (last) {
+      setter(prev => prev.map((gg2: any) => {
+        if (gg2.id !== g.id) return gg2;
+        const nx: any = structuredClone(gg2);
+        ensureInningsEvents(nx, inningIdx);
+        const half = getCurHalf(nx);
+        half.pitcherId = last;
+        return nx;
+      }));
+    }
+  }
 
   /** ===== 事件容器確保 / 取得 ===== */
   function ensureInningsEvents(gg: any, upto: number) {
@@ -258,8 +282,6 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
 
   /** ===== 動作：選投手 / 逐球 / 寫結果 ===== */
   const setPitcher = (pid: number) => {
-    if (!editable) return;
-
     setGames(prev => prev.map((ggx: any) => {
       if (ggx.id !== g.id) return ggx;
       const nx: any = structuredClone(ggx);
@@ -271,8 +293,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   };
 
   const addPitch = (mark: PitchMark) => {
-    if (!editable) return;
-
+    ensureCurrentPitcher(setGames);
     let missingPitcher = false;
     let shouldNextHalf = false;
 
@@ -283,7 +304,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       const half = getCurHalf(nx);
 (nx as any).lastEditedStep = step;
       // 防守半局需先選投手
-      if (!offense && !half.pitcherId) { missingPitcher = true; return nx; }
+      // 若未指定，前面 ensureCurrentPitcher 會自動帶入
 
       // 取/建當前打席
       let pa = half.pas[half.pas.length - 1] as PlateAppearance | undefined;
@@ -356,8 +377,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   };
 
   const commitResult = (res: PAResult) => {
-    if (!editable) return;
-
+    ensureCurrentPitcher(setGames);
     let turnNextHalf = false;
 
 
@@ -510,27 +530,6 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     prevOutsRef.current = cur;
   }, [curHalf.outs, inningIdx, isTop]);
 
-  // 進一步強化：若目前所在半局已經是 3 出局，連續往後跳到第一個 <3 出局的半局
-  useEffect(() => {
-    let s = step;
-    let guard = 0;
-    const getHalf = (st: number) => {
-      const inn = Math.floor(st / 2);
-      const top = (st % 2) === 0;
-      const ie = g?.inningsEvents?.[inn];
-      return ie ? (top ? ie.top : ie.bot) : undefined;
-    };
-    while (guard < 36) {
-      const h = getHalf(s);
-      if (!h) break;
-      const o = h.outs ?? 0;
-      if (o >= 3 && s < 17) { s += 1; guard += 1; continue; }
-      break;
-    }
-    if (s !== step) setStep(s);
-  }, [g.inningsEvents, step, g.id]);
-
-
   return (
     <div className="border rounded p-3 space-y-3">
       {/* 標題與導航 */}
@@ -539,12 +538,6 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
           第 {inningIdx + 1} 局 {isTop ? "上" : "下"}（{offense ? "進攻" : "防守"}）&nbsp;
           <span className="text-sm text-slate-600">出局：{outsDisp}</span>
         </div>
-      {locked && (
-        <div className="p-2 rounded bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
-          目前為「只讀」模式：此場次已儲存/鎖定，禁止再編輯逐局事件與統計。
-        </div>
-      )}
-
         <div className="flex items-center gap-2">
           <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => Math.max(0, s - 1))}>上一半局</button>
           <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => s + 1)}>下一半局</button>
@@ -572,20 +565,28 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       </div>
 
       {/* 投手（僅防守半局） */}
+      {
       {!offense && (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="text-sm">投手：</div>
-          <select className="text-sm border rounded px-2 py-1" value={curHalf.pitcherId || 0} onChange={(e) => setPitcher(Number(e.target.value))} disabled={!editable}>
-            <option value={0}>（選擇投手）</option>
-            {pitcherOptions.map((pid: number) => <option key={pid} value={pid}>{nameOf(pid)}</option>)}
-          </select>
-          {curPitcherName && <span className="text-xs text-slate-600">目前：{curPitcherName}</span>}
+        <div className="flex flex-wrap items-end gap-2 p-2 rounded bg-slate-50 border">
+          <div className="text-sm">當前投手：</div>
+          <div className="px-2 py-1 text-sm border rounded bg-white">
+            {curHalf.pitcherId ? nameOf(curHalf.pitcherId) : (findLastDefensePitcher(g, inningIdx) ? `${nameOf(findLastDefensePitcher(g, inningIdx)!) }（自動沿用）` : "（尚未指定）")}
+          </div>
 
-          <span className={`text-xs px-2 py-0.5 rounded ${warnPC ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-700"}`}>
-            用球數：{curPC}
-          </span>
+          <div className="text-sm ml-4">換投：</div>
+          <select className="border rounded px-2 py-1" value={newPitcherId} onChange={(e) => setNewPitcherId(Number(e.target.value)||0)} disabled={!editable}>
+            <option value={0}>（選換上投手）</option>
+            {(players||[]).filter(p => (p.positions||[]).includes("P")).map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <button type="button" className="px-2 py-1 text-xs border rounded bg-yellow-50 hover:bg-yellow-100" onClick={handleChangePitcher} disabled={!editable}>
+            換投（記錄）
+          </button>
+          <div className="text-xs text-slate-500">（只有要換投才操作；未操作時自動沿用上一個防守半局的投手）</div>
         </div>
       )}
+}
 
       {/* 當局打者（進攻半局） */}
       {offense && (
@@ -599,9 +600,9 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       {/* 逐球：B / S / F */}
       <div className="flex items-center gap-2">
         <div className="text-sm w-16">逐球：</div>
-        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("B")} disabled={!editable}>B</button>
-        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("S")} disabled={!editable}>S</button>
-        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("F")} disabled={!editable}>F</button>
+        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("B")}>B</button>
+        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("S")}>S</button>
+        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("F")}>F</button>
         <div className="text-xs text-slate-500">（4 壞自動保送、3 好自動三振）</div>
       </div>
 
@@ -642,7 +643,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
               <label key={k} className="inline-flex items-center gap-1">
                 {label}
                 <select
-                  className="border rounded px-1 py-0.5" disabled={!editable}
+                  className="border rounded px-1 py-0.5"
                   onChange={e => setAdv(k as keyof AdvancePlan, Number(e.target.value) as 0|1|2|3|4)}
                   defaultValue={0}
                 >
@@ -654,7 +655,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
                 </select>
               </label>
             ))}
-            <button type="button" className="ml-2 px-2 py-0.5 border rounded" onClick={() => setAdvPlan({})} disabled={!editable}>清除推進</button>
+            <button type="button" className="ml-2 px-2 py-0.5 border rounded" onClick={() => setAdvPlan({})}>清除推進</button>
           </div>
           <div className="text-[11px] text-slate-400">＊GO/FO/SO/CS/DP/TP 等出局類才會套用；SF/SH、安打/四死球已內建強迫或規則推進。</div>
         </div>
@@ -665,12 +666,12 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
         {offense ? (
           <label className="text-sm flex items-center gap-2">
             RBI：
-            <input type="number" min={0} className="w-20 border rounded px-2 py-1" disabled={!editable} value={rbiInput} onChange={e => setRbiInput(Number(e.target.value) || 0)} />
+            <input type="number" min={0} className="w-20 border rounded px-2 py-1" value={rbiInput} onChange={e => setRbiInput(Number(e.target.value) || 0)} />
           </label>
         ) : (
           <label className="text-sm flex items-center gap-2">
             ER（自責）：
-            <input type="number" min={0} className="w-20 border rounded px-2 py-1" disabled={!editable} value={erInput} onChange={e => setErInput(Number(e.target.value) || 0)} />
+            <input type="number" min={0} className="w-20 border rounded px-2 py-1" value={erInput} onChange={e => setErInput(Number(e.target.value) || 0)} />
           </label>
         )}
       </div>
@@ -679,8 +680,8 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       <div className="space-y-2">
         <div className="text-sm">打席結果：</div>
         <div className="grid grid-cols-8 gap-2">
-          {["1B","2B","3B","HR","HBP","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
-            <button key={k} className="px-2 py-1 border rounded" onClick={() => commitResult(k as PAResult)} disabled={!editable}>{k}</button>
+          {["1B","2B","3B","HR","BB","IBB","HBP","SO","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
+            <button key={k} className="px-2 py-1 border rounded" onClick={() => commitResult(k as PAResult)}>{k}</button>
           ))}
         </div>
       </div>
@@ -705,7 +706,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
               </div>
               <div className="flex items-center gap-1">
                 <select
-                  className="border rounded px-1 py-0.5" disabled={!editable}
+                  className="border rounded px-1 py-0.5"
                   defaultValue={ev.result ?? ""}
                   onChange={(e) => {
                     const newRes = e.target.value as PAResult;
@@ -727,14 +728,14 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
                   }}
                 >
                   <option value="">（選結果）</option>
-                  {["1B","2B","3B","HR","HBP","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
+                  {["1B","2B","3B","HR","BB","IBB","HBP","SO","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
                     <option key={k} value={k}>{k}</option>
                   ))}
                 </select>
 
                 <button
                   type="button"
-                  className="px-2 py-0.5 border rounded hover:bg-red-50" disabled={!editable}
+                  className="px-2 py-0.5 border rounded hover:bg-red-50"
                   onClick={() => {
                     const ok = window.confirm(`刪除第 ${idx+1} 個事件？`);
                     if (!ok) return;
