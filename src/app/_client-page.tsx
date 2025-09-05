@@ -751,51 +751,81 @@ const pidToName = (g: Game, pid?: number) => {
 
   /* ---------------- 雲端同步 ---------------- */
 
-
   async function loadFromCloud() {
-    const { data, error } = await supabase
-      .from("app_state")
-      .select("data, updated_at")
-      .eq("id", "default")
-      .maybeSingle();
-    if (error) {
-      alert("雲端載入失敗：" + error.message);
-      return;
+    try {
+      const { data, error } = await supabase
+        .from("app_state")
+        .select("data, updated_at")
+        .eq("id", "default")
+        .maybeSingle();
+
+      if (error) throw new Error(error.message);
+
+      const payload: any = data?.data ?? {};
+      const rawPlayers = Array.isArray(payload.players) ? payload.players : [];
+      const rawGames   = Array.isArray(payload.games)   ? payload.games   : [];
+
+      // 先用既有 reviveGames 還原，再把 inningsEvents / lastEditedStep 補回去
+      const revived = reviveGames(rawGames).map((g, i) => {
+        const src = rawGames[i] ?? {};
+        return {
+          ...g,
+          mode: src?.mode === "inning" ? "inning" : g.mode,
+          lastEditedStep: typeof src?.lastEditedStep === "number" ? src.lastEditedStep : g.lastEditedStep,
+          inningsEvents: Array.isArray(src?.inningsEvents) ? src.inningsEvents : [],
+        };
+      });
+
+      setPlayers(revivePlayers(rawPlayers));
+      setGames(revived);
+      setCompare(Array.isArray(payload.compare) ? payload.compare.map((x: any) => Number(x)).filter(Number.isFinite) : []);
+      setCloudTS(data?.updated_at ?? null);
+      alert("已從雲端載入。");
+    } catch (err: any) {
+      console.error("loadFromCloud error:", err);
+      alert("雲端載入失敗：" + (err?.message ?? String(err)));
     }
-    const payload = data?.data ?? {};
-    setPlayers(revivePlayers(payload.players ?? []));
-  setGames(Array.isArray(payload.games) ? payload.games.map(cloud_fromCloudGame) : []);
-    setCompare(Array.isArray(payload.compare) ? payload.compare.map((x: any) => Number(x)).filter(Number.isFinite) : []);
-    setCloudTS(data?.updated_at ?? null);
-    alert("已從雲端載入。");
   }
 
   async function saveToCloud() {
-    // 確認是否覆蓋較新版本
-    const { data: cur, error: e1 } = await supabase
-      .from("app_state")
-      .select("updated_at")
-      .eq("id", "default")
-      .maybeSingle();
-    if (e1) { alert("雲端檢查失敗：" + e1.message); return; }
-    const remoteTS = cur?.updated_at || null;
-    if (remoteTS && cloudTS && remoteTS !== cloudTS) {
-      const ok = confirm("偵測到雲端有較新的版本，確定要覆蓋嗎？");
-      if (!ok) return;
+    try {
+      // 帶上 inning 模式需要的欄位
+      const gamesForCloud = games.map((g: any) => ({
+        ...g,
+        mode: g.mode ?? "classic",
+        lastEditedStep: typeof g.lastEditedStep === "number" ? g.lastEditedStep : undefined,
+        inningsEvents: Array.isArray(g.inningsEvents) ? g.inningsEvents : [],
+      }));
+
+      // 若與雲端不同，詢問是否覆蓋（沿用你原本的邏輯）
+      if (cloudTS) {
+        const ok = confirm(`雲端最後更新：${new Date(cloudTS).toLocaleString()}。\n要覆蓋嗎？`);
+        if (!ok) return;
+      }
+
+      const payload = {
+        players,
+        games: gamesForCloud,
+        compare,
+        v: 3,
+        savedAt: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from("app_state")
+        .upsert({ id: "default", data: payload, updated_at: new Date().toISOString() })
+        .select("updated_at")
+        .single();
+
+      if (error) throw new Error(error.message);
+
+      setCloudTS(data?.updated_at ?? null);
+      lastSaveAtRef.current = Date.now();
+      alert("已存到雲端。");
+    } catch (err: any) {
+      console.error("saveToCloud error:", err);
+      alert("雲端存檔失敗：" + (err?.message ?? String(err)));
     }
-
-   const payload = { players, games: games.map(cloud_toCloudGame), compare, v: 3, savedAt: new Date().toISOString() };
-
-    const { data, error } = await supabase
-      .from("app_state")
-      .upsert({ id: "default", data: payload, updated_at: new Date().toISOString() })
-      .select("updated_at")
-      .single();
-
-    if (error) { alert("雲端存檔失敗：" + error.message); return; }
-    setCloudTS(data?.updated_at ?? null);
-    lastSaveAtRef.current = Date.now();
-    alert("已存到雲端。");
   }
 
  useEffect(() => {
