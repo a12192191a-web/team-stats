@@ -98,6 +98,7 @@ import {
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 type VoidFn = () => void | Promise<void>;
 import HalfStepperPanel from "../components/HalfStepperPanel";
+import Image from "next/image";
 
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
@@ -714,7 +715,15 @@ async function hardRefresh() {
 
 const Navbar = () => (
   <div className="w-full sticky top-0 z-10 bg-[#08213A] text-white flex items-center gap-4 px-4 py-2">
-    <img src="/37758.jpg" alt="RS" className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain" />
+   <Image
+  src="/37758.jpg"
+  alt="RS"
+  width={32}
+  height={32}
+  priority
+  className="h-8 w-auto rounded-sm border border-white/20 bg-white object-contain"
+/>
+
     <div className="font-bold tracking-wide">RS Baseball Manager</div>
     <div className="ml-auto flex flex-wrap gap-2">
       <button
