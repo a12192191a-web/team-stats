@@ -565,7 +565,6 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       </div>
 
       {/* 投手（僅防守半局） */}
-      {
       {!offense && (
         <div className="flex flex-wrap items-end gap-2 p-2 rounded bg-slate-50 border">
           <div className="text-sm">當前投手：</div>
@@ -586,7 +585,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
           <div className="text-xs text-slate-500">（只有要換投才操作；未操作時自動沿用上一個防守半局的投手）</div>
         </div>
       )}
-}
+
 
       {/* 當局打者（進攻半局） */}
       {offense && (
