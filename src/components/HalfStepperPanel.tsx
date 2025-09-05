@@ -93,6 +93,10 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
   const offense = g.startDefense ? !isTop : isTop; // 先守：上守下攻；先攻相反
+  // 是否鎖定只讀（儲存後不可編輯）：支援多種欄位名稱
+  const locked: boolean = !!(g?.locked || g?.isLocked || g?.final || g?.isFinal || g?.saved || g?.readonly);
+  const editable = !locked;
+
 
   const lineupPids: number[] = (g.lineup || []).filter((pid: number) => !!pid);
   const batterIdxKey: "nextBatterIdxTop" | "nextBatterIdxBot" = isTop ? "nextBatterIdxTop" : "nextBatterIdxBot";
@@ -254,6 +258,8 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
 
   /** ===== 動作：選投手 / 逐球 / 寫結果 ===== */
   const setPitcher = (pid: number) => {
+    if (!editable) return;
+
     setGames(prev => prev.map((ggx: any) => {
       if (ggx.id !== g.id) return ggx;
       const nx: any = structuredClone(ggx);
@@ -265,6 +271,8 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   };
 
   const addPitch = (mark: PitchMark) => {
+    if (!editable) return;
+
     let missingPitcher = false;
     let shouldNextHalf = false;
 
@@ -348,6 +356,8 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   };
 
   const commitResult = (res: PAResult) => {
+    if (!editable) return;
+
     let turnNextHalf = false;
 
 
@@ -508,6 +518,12 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
           第 {inningIdx + 1} 局 {isTop ? "上" : "下"}（{offense ? "進攻" : "防守"}）&nbsp;
           <span className="text-sm text-slate-600">出局：{outsDisp}</span>
         </div>
+      {locked && (
+        <div className="p-2 rounded bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
+          目前為「只讀」模式：此場次已儲存/鎖定，禁止再編輯逐局事件與統計。
+        </div>
+      )}
+
         <div className="flex items-center gap-2">
           <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => Math.max(0, s - 1))}>上一半局</button>
           <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => setStep(s => s + 1)}>下一半局</button>
@@ -538,7 +554,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       {!offense && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm">投手：</div>
-          <select className="text-sm border rounded px-2 py-1" value={curHalf.pitcherId || 0} onChange={(e) => setPitcher(Number(e.target.value))}>
+          <select className="text-sm border rounded px-2 py-1" value={curHalf.pitcherId || 0} onChange={(e) => setPitcher(Number(e.target.value))} disabled={!editable}>
             <option value={0}>（選擇投手）</option>
             {pitcherOptions.map((pid: number) => <option key={pid} value={pid}>{nameOf(pid)}</option>)}
           </select>
@@ -562,9 +578,9 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       {/* 逐球：B / S / F */}
       <div className="flex items-center gap-2">
         <div className="text-sm w-16">逐球：</div>
-        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("B")}>B</button>
-        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("S")}>S</button>
-        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("F")}>F</button>
+        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("B")} disabled={!editable}>B</button>
+        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("S")} disabled={!editable}>S</button>
+        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("F")} disabled={!editable}>F</button>
         <div className="text-xs text-slate-500">（4 壞自動保送、3 好自動三振）</div>
       </div>
 
@@ -605,7 +621,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
               <label key={k} className="inline-flex items-center gap-1">
                 {label}
                 <select
-                  className="border rounded px-1 py-0.5"
+                  className="border rounded px-1 py-0.5" disabled={!editable} disabled={!editable}
                   onChange={e => setAdv(k as keyof AdvancePlan, Number(e.target.value) as 0|1|2|3|4)}
                   defaultValue={0}
                 >
@@ -617,7 +633,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
                 </select>
               </label>
             ))}
-            <button type="button" className="ml-2 px-2 py-0.5 border rounded" onClick={() => setAdvPlan({})}>清除推進</button>
+            <button type="button" className="ml-2 px-2 py-0.5 border rounded" onClick={() => setAdvPlan({})} disabled={!editable}>清除推進</button>
           </div>
           <div className="text-[11px] text-slate-400">＊GO/FO/SO/CS/DP/TP 等出局類才會套用；SF/SH、安打/四死球已內建強迫或規則推進。</div>
         </div>
@@ -628,12 +644,12 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
         {offense ? (
           <label className="text-sm flex items-center gap-2">
             RBI：
-            <input type="number" min={0} className="w-20 border rounded px-2 py-1" value={rbiInput} onChange={e => setRbiInput(Number(e.target.value) || 0)} />
+            <input type="number" min={0} className="w-20 border rounded px-2 py-1" disabled={!editable} value={rbiInput} onChange={e => setRbiInput(Number(e.target.value) || 0)} />
           </label>
         ) : (
           <label className="text-sm flex items-center gap-2">
             ER（自責）：
-            <input type="number" min={0} className="w-20 border rounded px-2 py-1" value={erInput} onChange={e => setErInput(Number(e.target.value) || 0)} />
+            <input type="number" min={0} className="w-20 border rounded px-2 py-1" disabled={!editable} value={erInput} onChange={e => setErInput(Number(e.target.value) || 0)} />
           </label>
         )}
       </div>
@@ -643,7 +659,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
         <div className="text-sm">打席結果：</div>
         <div className="grid grid-cols-8 gap-2">
           {["1B","2B","3B","HR","BB","IBB","HBP","SO","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
-            <button key={k} className="px-2 py-1 border rounded" onClick={() => commitResult(k as PAResult)}>{k}</button>
+            <button key={k} className="px-2 py-1 border rounded" onClick={() => commitResult(k as PAResult)} disabled={!editable}>{k}</button>
           ))}
         </div>
       </div>
@@ -668,7 +684,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
               </div>
               <div className="flex items-center gap-1">
                 <select
-                  className="border rounded px-1 py-0.5"
+                  className="border rounded px-1 py-0.5" disabled={!editable} disabled={!editable}
                   defaultValue={ev.result ?? ""}
                   onChange={(e) => {
                     const newRes = e.target.value as PAResult;
@@ -697,7 +713,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
 
                 <button
                   type="button"
-                  className="px-2 py-0.5 border rounded hover:bg-red-50"
+                  className="px-2 py-0.5 border rounded hover:bg-red-50" disabled={!editable}
                   onClick={() => {
                     const ok = window.confirm(`刪除第 ${idx+1} 個事件？`);
                     if (!ok) return;
