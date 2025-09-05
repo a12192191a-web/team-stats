@@ -14,51 +14,66 @@ function getBuildIdFromHtml(html: string): string | null {
   return m ? m[1] : null;
 }
 
-function useHotUpdateWithAutosave(players: Player[], games: Game[]) {
-  const router = useRouter();
+function useHotUpdateWithAutosave(players: any, games: any) {
+  const latestState = useRef<{ players: any; games: any }>({ players, games });
+  useEffect(() => { latestState.current = { players, games }; }, [players, games]);
 
-  // 1) 只負責保存「最新」資料
-  const latestRef = useRef<{ players: Player[]; games: Game[] }>({ players, games });
+  // A) 直進系統就刷新（每個分頁只做一次，避免死循環）
+  // 已關閉以避免進入「比賽紀錄」時閃爍
   useEffect(() => {
-    latestRef.current = { players, games };
-  }, [players, games]);
+    if (!FORCE_RELOAD_ON_ENTER) return;
+    try {
+      if (!sessionStorage.getItem(SS_ONCE)) {
+        sessionStorage.setItem(SS_ONCE, "1");
+      
+      }
+    } catch {}
+  }, []);
 
-  // 2) 只掛一次的版本檢查器
+  // B) 使用中若發現有新版本：先存，再刷新
   useEffect(() => {
     let alive = true;
+    const currentId = (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
 
     const check = async () => {
-      if (!alive) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       try {
-        const res = await fetch("/api/ping", { method: "HEAD", cache: "no-store" });
-        const remote = res.headers.get("x-build") || "";
-        const current = process.env.NEXT_PUBLIC_BUILD || "";
-        if (remote && current && remote !== current) {
-          // 檢到新版本：先備份，再刷新
-          const { players: p, games: g } = latestRef.current;
-          localStorage.setItem(LS_PLAYERS, JSON.stringify(p));
-          localStorage.setItem(LS_GAMES, JSON.stringify(g));
-          localStorage.setItem(LS_BACKUP, JSON.stringify({ ts: Date.now(), players: p, games: g }));
-          router.refresh(); // 或呼叫 hardRefresh()
+        const res = await fetch("/", { cache: "no-store" });
+        const html = await res.text();
+        const latestId = getBuildIdFromHtml(html);
+        if (!alive) return;
+        if (currentId && latestId && latestId !== currentId) {
+          // 先本端存檔
+          try {
+            const { players: p, games: g } = latestState.current;
+            localStorage.setItem(LS_PLAYERS, JSON.stringify(p));
+                        localStorage.setItem(LS_GAMES,   JSON.stringify(g));
+                        localStorage.setItem(LS_BACKUP,  JSON.stringify({ ts: Date.now(), players: p, games: g }));
+          } catch {}
+
+          // 再自動刷新頁面
+         
         }
       } catch {}
     };
 
-    const id = setInterval(check, 60_000);
+    // 定時檢查 + 聚焦檢查
+    const tid = setInterval(check, 60000);
     const onFocus = () => check();
     const onVis = () => { if (document.visibilityState === "visible") check(); };
-
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVis);
-    setTimeout(check, 5000); // 首次延遲 5 秒檢查
+    // 首次也檢查一次（避免等一分鐘）
+    const first = setTimeout(check, 5000);
 
     return () => {
       alive = false;
-      clearInterval(id);
+      clearInterval(tid);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, []); // ← 只掛一次
+
+  }, []);
 }
 
 
