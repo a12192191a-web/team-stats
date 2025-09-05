@@ -587,10 +587,22 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
           <span className="text-sm text-slate-600">出局：{outsDisp}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => goToStep(step - 1)}>上一半局</button>
-          <button type="button" className="text-xs px-2 py-1 border rounded" onClick={() => goToStep(step + 1)}>下一半局</button>
-        </div>
-      </div>
+         <button
+              type="button"
+               onClick={() => goToStep(step - 1)}
+               className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 shadow hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95"
+              >
+               上一半局
+              </button>
+             <button
+              type="button"
+               onClick={() => goToStep(step + 1)}
+               className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-slate-100 to-slate-200 shadow hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95"
+              >
+               下一半局
+             </button>
+            </div>
+           </div>
 
       {/* 半局跳轉 */}
       <div className="flex flex-wrap items-center gap-2">
@@ -599,15 +611,20 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
           const top = (i % 2) === 0;
           const active = step === i;
           return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => goToStep(i)}
-              className={`text-xs px-2 py-1 rounded border ${active ? "bg-black text-white" : ""}`}
-              title={`${inn}局${top ? "上" : "下"}`}
-            >
-              {inn}{top ? "▲" : "▼"}
-            </button>
+          <button
+  key={i}
+  type="button"
+  onClick={() => goToStep(i)}
+  className={`text-xs px-2 py-1.5 rounded-md shadow-sm transition-all duration-300 hover:scale-105 active:scale-95 ${
+    active
+      ? "bg-gradient-to-r from-black to-gray-800 text-white shadow-md"
+      : "bg-white border hover:bg-slate-100"
+  }`}
+  title={`${inn}局${top ? "上" : "下"}`}
+>
+  {inn}{top ? "▲" : "▼"}
+</button>
+
           );
         })}
       </div>
@@ -640,7 +657,15 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       {/* 逐球：B / S / F */}
       <div className="flex items-center gap-2">
         <div className="text-sm w-16">逐球：</div>
-        <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("B")} disabled={!editable}>B</button>
+<button
+  type="button"
+  onClick={() => addPitch("B")}
+  disabled={!editable}
+  className="px-4 py-1.5 rounded-lg font-semibold bg-green-100 text-green-700 hover:bg-green-200 shadow transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
+>
+  B
+</button>
+
         <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("S")} disabled={!editable}>S</button>
         <button type="button" className="px-3 py-1 border rounded" onClick={() => addPitch("F")} disabled={!editable}>F</button>
         <div className="text-xs text-slate-500">（4 壞自動保送、3 好自動三振）</div>
@@ -721,7 +746,15 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
         <div className="text-sm">打席結果：</div>
         <div className="grid grid-cols-8 gap-2">
           {["1B","2B","3B","HR","BB","IBB","HBP","SO","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
-            <button key={k} className="px-2 py-1 border rounded" onClick={() => commitResult(k as PAResult)} disabled={!editable}>{k}</button>
+         <button
+  key={k}
+  onClick={() => commitResult(k as PAResult)}
+  disabled={!editable}
+  className="px-3 py-1.5 rounded-md bg-gradient-to-r from-slate-50 to-slate-100 border shadow-sm hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
+>
+  {k}
+</button>
+
           ))}
         </div>
       </div>
@@ -729,9 +762,15 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
 
       {/* 比賽控制 */}
       <div className="mt-4 flex justify-end">
-        <button type="button" className="px-3 py-1.5 rounded bg-black text-white disabled:opacity-40" onClick={endGame} disabled={locked}>
-          比賽結束
-        </button>
+        <button
+  type="button"
+  onClick={endGame}
+  disabled={locked}
+  className="px-4 py-2 rounded-xl font-semibold bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-40"
+>
+  比賽結束
+</button>
+
       </div>
       {/* 打席事件清單 */}
       <div className="mt-3 border-t pt-2">
