@@ -391,6 +391,11 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
 
       // 寫結果與出局數
       pa.result = res;
+      // 若未逐球紀錄，依結果自動補用球數（SO=3球、BB=4球）
+      if (!pa.pitches || pa.pitches.length === 0) {
+        if (res === "SO") pa.pitches = ["S","S","S"] as any;
+        if (res === "BB") pa.pitches = ["B","B","B","B"] as any;
+      }
       pa.outsAdded = outsOf(res);
       if (offense && rbiInput) pa.rbi = rbiInput;
       if (!offense && erInput)  pa.er  = erInput;
@@ -545,6 +550,19 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   }, [g.inningsEvents, step, g.id]);
 
 
+  // ===== 比賽結束：鎖定本場，並標記完成 =====
+  const endGame = () => {
+    if (locked) return;
+    setGames(prev => prev.map((ggx: any) => {
+      if (ggx.id !== g.id) return ggx;
+      const nx: any = structuredClone(ggx);
+      nx.locked = true;
+      nx.final = true;
+      nx.endedAt = Date.now();
+      return recomputeAllStatsFromEvents(nx);
+    }));
+  };
+
   return (
     <div className="border rounded p-3 space-y-3">
       {/* 標題與導航 */}
@@ -693,6 +711,13 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
         </div>
       </div>
 
+
+      {/* 比賽控制 */}
+      <div className="mt-4 flex justify-end">
+        <button type="button" className="px-3 py-1.5 rounded bg-black text-white disabled:opacity-40" onClick={endGame} disabled={locked}>
+          比賽結束
+        </button>
+      </div>
       {/* 打席事件清單 */}
       <div className="mt-3 border-t pt-2">
         <div className="text-sm font-medium mb-1">本半局事件</div>
