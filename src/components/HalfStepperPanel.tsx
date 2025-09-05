@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 /** ===== Types ===== */
 type PitchMark = "S" | "B" | "F";
@@ -130,6 +130,9 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     gg.inningsEvents && gg.inningsEvents[inningIdx]
       ? (isTop ? gg.inningsEvents[inningIdx].top : gg.inningsEvents[inningIdx].bot)
       : { outs: 0, pitcherId: undefined, pas: [], bases: [false,false,false] };
+
+  // 用來偵測「本半局出局數」是否剛達到 3（自動換半局）
+  const prevOutsRef = useRef<number>(curHalf.outs ?? 0);
 
   const curPA: PlateAppearance | null = curHalf.pas?.length ? curHalf.pas[curHalf.pas.length - 1] : null;
   const { balls: curBalls, strikes: curStrikes } =
@@ -485,6 +488,17 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   );
 
   const outsDisp = "●".repeat(curHalf.outs || 0) + "○".repeat(3 - (curHalf.outs || 0));
+
+  // 監看出局數，當從 <3 變成 >=3 時自動切換到下一半局（避免依賴 setState 閉包旗標）
+  useEffect(() => {
+    const cur = curHalf.outs ?? 0;
+    const prev = prevOutsRef.current ?? 0;
+    if (cur >= 3 && prev < 3) {
+      // 等待當前 setGames 完成後再切換，避免同幀狀態競態
+      setTimeout(() => setStep(s => s + 1), 0);
+    }
+    prevOutsRef.current = cur;
+  }, [curHalf.outs, inningIdx, isTop]);
 
   return (
     <div className="border rounded p-3 space-y-3">
