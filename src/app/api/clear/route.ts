@@ -9,7 +9,6 @@ export async function GET(req: Request) {
   const html = `<!doctype html><meta charset="utf-8"><title>Clearing…</title>
 <body><script>
 (async () => {
-  // 需要保留的 localStorage key（你的資料）
   const KEEP = ["rsbm.players.v2","rsbm.games.v2","rsbm.lineup.templates.v1"];
   const snap = {};
   try {
