@@ -510,6 +510,27 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     prevOutsRef.current = cur;
   }, [curHalf.outs, inningIdx, isTop]);
 
+  // 進一步強化：若目前所在半局已經是 3 出局，連續往後跳到第一個 <3 出局的半局
+  useEffect(() => {
+    let s = step;
+    let guard = 0;
+    const getHalf = (st: number) => {
+      const inn = Math.floor(st / 2);
+      const top = (st % 2) === 0;
+      const ie = g?.inningsEvents?.[inn];
+      return ie ? (top ? ie.top : ie.bot) : undefined;
+    };
+    while (guard < 36) {
+      const h = getHalf(s);
+      if (!h) break;
+      const o = h.outs ?? 0;
+      if (o >= 3 && s < 17) { s += 1; guard += 1; continue; }
+      break;
+    }
+    if (s !== step) setStep(s);
+  }, [g.inningsEvents, step, g.id]);
+
+
   return (
     <div className="border rounded p-3 space-y-3">
       {/* 標題與導航 */}
@@ -658,7 +679,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       <div className="space-y-2">
         <div className="text-sm">打席結果：</div>
         <div className="grid grid-cols-8 gap-2">
-          {["1B","2B","3B","HR","BB","IBB","HBP","SO","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
+          {["1B","2B","3B","HR","HBP","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
             <button key={k} className="px-2 py-1 border rounded" onClick={() => commitResult(k as PAResult)} disabled={!editable}>{k}</button>
           ))}
         </div>
@@ -706,7 +727,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
                   }}
                 >
                   <option value="">（選結果）</option>
-                  {["1B","2B","3B","HR","BB","IBB","HBP","SO","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
+                  {["1B","2B","3B","HR","HBP","GO","FO","SF","SH","DP","TP","CS","E","FC"].map((k: string) => (
                     <option key={k} value={k}>{k}</option>
                   ))}
                 </select>
