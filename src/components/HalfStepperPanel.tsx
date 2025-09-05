@@ -621,7 +621,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
               <label key={k} className="inline-flex items-center gap-1">
                 {label}
                 <select
-                  className="border rounded px-1 py-0.5" disabled={!editable} disabled={!editable}
+                  className="border rounded px-1 py-0.5" disabled={!editable}
                   onChange={e => setAdv(k as keyof AdvancePlan, Number(e.target.value) as 0|1|2|3|4)}
                   defaultValue={0}
                 >
@@ -684,7 +684,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
               </div>
               <div className="flex items-center gap-1">
                 <select
-                  className="border rounded px-1 py-0.5" disabled={!editable} disabled={!editable}
+                  className="border rounded px-1 py-0.5" disabled={!editable}
                   defaultValue={ev.result ?? ""}
                   onChange={(e) => {
                     const newRes = e.target.value as PAResult;
