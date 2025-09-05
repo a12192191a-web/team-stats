@@ -1,6 +1,5 @@
 "use client";
-
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 /** ===== Types ===== */
 type PitchMark = "S" | "B" | "F";
@@ -93,6 +92,35 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   const inningIdx = Math.floor(step / 2);
   const isTop = (step % 2) === 0;
   const offense = g.startDefense ? !isTop : isTop; // 先守：上守下攻；先攻相反
+  // 自動沿用上一個防守半局的投手
+  const defenseHalfIsTop = g.startDefense ? true : false;
+  function findLastDefensePitcher(gg2: any, idx: number): number | undefined {
+    const key = defenseHalfIsTop ? "top" : "bot";
+    for (let i = idx - 1; i >= 0; i--) {
+      const half = gg2?.inningsEvents?.[i]?.[key];
+      if (half?.pitcherId) return half.pitcherId;
+    }
+    return undefined;
+  }
+  useEffect(() => {
+    if (offense) return;
+    // 若當前半局尚未指定投手，沿用上一次防守半局的投手
+    const cur = curHalf?.pitcherId;
+    if (!cur) {
+      const last = findLastDefensePitcher(g, inningIdx);
+      if (last) {
+        setGames(prev => prev.map((gg2: any) => {
+          if (gg2.id !== g.id) return gg2;
+          const nx: any = structuredClone(gg2);
+          ensureInningsEvents(nx, inningIdx);
+          const half = isTop ? nx.inningsEvents[inningIdx].top : nx.inningsEvents[inningIdx].bot;
+          if (!half.pitcherId) half.pitcherId = last;
+          return nx;
+        }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inningIdx, isTop]);
 
   const lineupPids: number[] = (g.lineup || []).filter((pid: number) => !!pid);
   const batterIdxKey: "nextBatterIdxTop" | "nextBatterIdxBot" = isTop ? "nextBatterIdxTop" : "nextBatterIdxBot";
@@ -110,34 +138,6 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     return { name: snap?.name ?? `#${pid}`, positions: snap?.positions ?? [] };
   };
   const nameOf = (pid?: number): string => (pid ? getNameAndPositions(g, pid).name : "");
-
-  /** ===== 自動沿用上局投手（防守半局） ===== */
-  const defenseHalfIsTop = g.startDefense ? true : false;
-  function findLastDefensePitcher(gg2: any, idx: number): number | undefined {
-    if (!gg2?.inningsEvents) return undefined;
-    const key = defenseHalfIsTop ? 'top' : 'bot';
-    for (let i = idx - 1; i >= 0; i--) {
-      const h = gg2.inningsEvents[i]?.[key];
-      if (h?.pitcherId) return h.pitcherId;
-    }
-    return undefined;
-  }
-  function ensureCurrentPitcher(setter: (fn: any) => any) {
-    if (offense) return; // 只有防守半局需要投手
-    const curPid = curHalf?.pitcherId;
-    if (curPid) return;
-    const last = findLastDefensePitcher(g, inningIdx);
-    if (last) {
-      setter(prev => prev.map((gg2: any) => {
-        if (gg2.id !== g.id) return gg2;
-        const nx: any = structuredClone(gg2);
-        ensureInningsEvents(nx, inningIdx);
-        const half = getCurHalf(nx);
-        half.pitcherId = last;
-        return nx;
-      }));
-    }
-  }
 
   /** ===== 事件容器確保 / 取得 ===== */
   function ensureInningsEvents(gg: any, upto: number) {
@@ -158,9 +158,6 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     gg.inningsEvents && gg.inningsEvents[inningIdx]
       ? (isTop ? gg.inningsEvents[inningIdx].top : gg.inningsEvents[inningIdx].bot)
       : { outs: 0, pitcherId: undefined, pas: [], bases: [false,false,false] };
-
-  // 用來偵測「本半局出局數」是否剛達到 3（自動換半局）
-  const prevOutsRef = useRef<number>(curHalf.outs ?? 0);
 
   const curPA: PlateAppearance | null = curHalf.pas?.length ? curHalf.pas[curHalf.pas.length - 1] : null;
   const { balls: curBalls, strikes: curStrikes } =
@@ -293,8 +290,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   };
 
   const addPitch = (mark: PitchMark) => {
-    ensureCurrentPitcher(setGames);
-    let missingPitcher = false;
+    const missingPitcher = false;
     let shouldNextHalf = false;
 
     setGames(prev => prev.map((ggx: any) => {
@@ -304,7 +300,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       const half = getCurHalf(nx);
 (nx as any).lastEditedStep = step;
       // 防守半局需先選投手
-      // 若未指定，前面 ensureCurrentPitcher 會自動帶入
+      if (!offense && !half.pitcherId) { missingPitcher = true; return nx; }
 
       // 取/建當前打席
       let pa = half.pas[half.pas.length - 1] as PlateAppearance | undefined;
@@ -377,7 +373,6 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   };
 
   const commitResult = (res: PAResult) => {
-    ensureCurrentPitcher(setGames);
     let turnNextHalf = false;
 
 
@@ -518,17 +513,39 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   );
 
   const outsDisp = "●".repeat(curHalf.outs || 0) + "○".repeat(3 - (curHalf.outs || 0));
-
-  // 監看出局數，當從 <3 變成 >=3 時自動切換到下一半局（避免依賴 setState 閉包旗標）
+  // 監看出局數，剛達 3 時自動切換到下一半局
+  const prevOutsRef = useRef<number>(curHalf.outs ?? 0);
   useEffect(() => {
     const cur = curHalf.outs ?? 0;
     const prev = prevOutsRef.current ?? 0;
     if (cur >= 3 && prev < 3) {
-      // 等待當前 setGames 完成後再切換，避免同幀狀態競態
       setTimeout(() => setStep(s => s + 1), 0);
     }
     prevOutsRef.current = cur;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curHalf.outs, inningIdx, isTop]);
+
+  // 若目前 step 指向的半局已達 3 出局，連續跳到第一個尚未結束的半局
+  useEffect(() => {
+    let s = step;
+    let guard = 0;
+    const getHalf = (st: number) => {
+      const inn = Math.floor(st / 2);
+      const top = (st % 2) === 0;
+      const ie = g?.inningsEvents?.[inn];
+      return ie ? (top ? ie.top : ie.bot) : undefined;
+    };
+    while (guard < 36) {
+      const h = getHalf(s);
+      if (!h) break;
+      const o = h.outs ?? 0;
+      if (o >= 3 && s < 17) { s += 1; guard += 1; continue; }
+      break;
+    }
+    if (s !== step) setStep(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [g.inningsEvents, step, g.id]);
+
 
   return (
     <div className="border rounded p-3 space-y-3">
@@ -566,26 +583,19 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
 
       {/* 投手（僅防守半局） */}
       {!offense && (
-        <div className="flex flex-wrap items-end gap-2 p-2 rounded bg-slate-50 border">
-          <div className="text-sm">當前投手：</div>
-          <div className="px-2 py-1 text-sm border rounded bg-white">
-            {curHalf.pitcherId ? nameOf(curHalf.pitcherId) : (findLastDefensePitcher(g, inningIdx) ? `${nameOf(findLastDefensePitcher(g, inningIdx)!) }（自動沿用）` : "（尚未指定）")}
-          </div>
-
-          <div className="text-sm ml-4">換投：</div>
-          <select className="border rounded px-2 py-1" value={newPitcherId} onChange={(e) => setNewPitcherId(Number(e.target.value)||0)} disabled={!editable}>
-            <option value={0}>（選換上投手）</option>
-            {(players||[]).filter(p => (p.positions||[]).includes("P")).map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-sm">投手：</div>
+          <select className="text-sm border rounded px-2 py-1" value={curHalf.pitcherId || 0} onChange={(e) => setPitcher(Number(e.target.value))}>
+            <option value={0}>（選擇投手）</option>
+            {pitcherOptions.map((pid: number) => <option key={pid} value={pid}>{nameOf(pid)}</option>)}
           </select>
-          <button type="button" className="px-2 py-1 text-xs border rounded bg-yellow-50 hover:bg-yellow-100" onClick={handleChangePitcher} disabled={!editable}>
-            換投（記錄）
-          </button>
-          <div className="text-xs text-slate-500">（只有要換投才操作；未操作時自動沿用上一個防守半局的投手）</div>
+          {curPitcherName && <span className="text-xs text-slate-600">目前：{curPitcherName}</span>}
+
+          <span className={`text-xs px-2 py-0.5 rounded ${warnPC ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-700"}`}>
+            用球數：{curPC}
+          </span>
         </div>
       )}
-
 
       {/* 當局打者（進攻半局） */}
       {offense && (
