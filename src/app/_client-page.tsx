@@ -97,7 +97,8 @@ import {
 } from "recharts";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 type VoidFn = () => void | Promise<void>;
-import HalfStepperPanel from "./HalfStepperPanel";
+import HalfStepperPanel from "../components/HalfStepperPanel";
+
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
 function useFloatingCheckUpdateButton(onClick?: VoidFn) {
