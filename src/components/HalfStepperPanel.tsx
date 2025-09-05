@@ -119,7 +119,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
         }));
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, [inningIdx, isTop]);
 
   const lineupPids: number[] = (g.lineup || []).filter((pid: number) => !!pid);
@@ -290,7 +290,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   };
 
   const addPitch = (mark: PitchMark) => {
-    const missingPitcher = false;
+    
     let shouldNextHalf = false;
 
     setGames(prev => prev.map((ggx: any) => {
@@ -300,7 +300,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       const half = getCurHalf(nx);
 (nx as any).lastEditedStep = step;
       // 防守半局需先選投手
-      if (!offense && !half.pitcherId) { missingPitcher = true; return nx; }
+      if (!offense && !half.pitcherId) { /* ensureCurrentPitcher will auto-fill */ return nx; }
 
       // 取/建當前打席
       let pa = half.pas[half.pas.length - 1] as PlateAppearance | undefined;
@@ -522,7 +522,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       setTimeout(() => setStep(s => s + 1), 0);
     }
     prevOutsRef.current = cur;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, [curHalf.outs, inningIdx, isTop]);
 
   // 若目前 step 指向的半局已達 3 出局，連續跳到第一個尚未結束的半局
@@ -543,7 +543,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       break;
     }
     if (s !== step) setStep(s);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, [g.inningsEvents, step, g.id]);
 
 
