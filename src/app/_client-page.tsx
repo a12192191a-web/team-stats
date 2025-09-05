@@ -100,23 +100,6 @@ type VoidFn = () => void | Promise<void>;
 import HalfStepperPanel from "../components/HalfStepperPanel";
 import Image from "next/image";
 // === Cloud persistence helpers ===
-// ➊ 存到雲端前轉乾淨：避免遺漏 inningsEvents / mode / lastEditedStep
-function toCloudGame(g: any) {
-  return {
-    id: g.id,
-    name: g.name ?? "",
-    date: g.date ?? "",
-    mode: g.mode ?? "classic",            // <== 重要：逐局模式要帶上
-    startDefense: !!g.startDefense,
-    lineup: Array.isArray(g.lineup) ? g.lineup : [],
-    nextBatterIdxTop: g.nextBatterIdxTop ?? 0,
-    nextBatterIdxBot: g.nextBatterIdxBot ?? 0,
-    lastEditedStep: typeof g.lastEditedStep === "number" ? g.lastEditedStep : undefined, // <== 重要
-    inningsEvents: Array.isArray(g.inningsEvents) ? g.inningsEvents : [],                // <== 重要
-    // 可選：你若還存 stats 也無妨，但載入會用事件重算覆蓋
-    stats: g.stats ?? {},
-  };
-}
 
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）
@@ -574,10 +557,8 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
            R: toNonNegNum(batting.R), RBI: toNonNegNum(batting.RBI), SH: toNonNegNum(batting.SH),
            SB, CS, SBP, BB9, H9, KBB, OBA, PC };
 }
-// === Cloud helpers (toCloud / fromCloud / revive / recompute) ===
-type PitchMark = "S"|"B"|"F";
-type PAResult = "1B"|"2B"|"3B"|"HR"|"BB"|"IBB"|"HBP"|"SO"|"GO"|"FO"|"SF"|"SH"|"DP"|"TP"|"CS"|"E"|"FC";
-type BaseState = [boolean, boolean, boolean];
+
+
 
 const cloud_emptyTriple = () => ({
   batting: { "1B":0,"2B":0,"3B":0, HR:0, BB:0, SO:0, HBP:0, SF:0, SH:0, GO:0, FO:0, R:0, RBI:0 },
@@ -606,7 +587,7 @@ function cloud_toCloudGame(g: any) {
 // 復原 helpers
 function cloud_revivePA(p:any){
   const pick = (x:any): x is PitchMark => x==="B"||x==="S"||x==="F";
-  const b3 = (a:any):BaseState => [!!a?.[0], !!a?.[1], !!a?.[2]];
+const b3 = (a:any): [boolean, boolean, boolean] => [!!a?.[0], !!a?.[1], !!a?.[2]];
   return {
     batterId: Number(p?.batterId)||0,
     pitcherId: Number(p?.pitcherId)||0,
@@ -628,7 +609,7 @@ function cloud_reviveHalf(h:any){
     outs: Math.max(0, Math.min(3, Number(h?.outs)||0)) as 0|1|2|3,
     pitcherId: h?.pitcherId ? Number(h.pitcherId) : undefined,
     pas: Array.isArray(h?.pas) ? h.pas.map(cloud_revivePA) : [],
-    bases: [!!h?.bases?.[0], !!h?.bases?.[1], !!h?.bases?.[2]] as BaseState,
+  bases: [!!h?.bases?.[0], !!h?.bases?.[1], !!h?.bases?.[2]] as [boolean, boolean, boolean],
   };
 }
 function cloud_reviveInningsEvents(raw:any){
