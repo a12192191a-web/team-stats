@@ -99,6 +99,24 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 type VoidFn = () => void | Promise<void>;
 import HalfStepperPanel from "../components/HalfStepperPanel";
 import Image from "next/image";
+// === Cloud persistence helpers ===
+// ➊ 存到雲端前轉乾淨：避免遺漏 inningsEvents / mode / lastEditedStep
+function toCloudGame(g: any) {
+  return {
+    id: g.id,
+    name: g.name ?? "",
+    date: g.date ?? "",
+    mode: g.mode ?? "classic",            // <== 重要：逐局模式要帶上
+    startDefense: !!g.startDefense,
+    lineup: Array.isArray(g.lineup) ? g.lineup : [],
+    nextBatterIdxTop: g.nextBatterIdxTop ?? 0,
+    nextBatterIdxBot: g.nextBatterIdxBot ?? 0,
+    lastEditedStep: typeof g.lastEditedStep === "number" ? g.lastEditedStep : undefined, // <== 重要
+    inningsEvents: Array.isArray(g.inningsEvents) ? g.inningsEvents : [],                // <== 重要
+    // 可選：你若還存 stats 也無妨，但載入會用事件重算覆蓋
+    stats: g.stats ?? {},
+  };
+}
 
 
 // 右下角「檢查更新」浮動按鈕（型別安全版，不用 @ts-ignore）

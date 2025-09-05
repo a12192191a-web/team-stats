@@ -391,6 +391,8 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
         const len = lineupPids.length || 9;
         (nx as any)[batterIdxKey] = (nextIdx + 1) % len;
       }
+      
+(nx as any).lastEditedStep = step;   // <== 記下當下半局
 
       // 回傳「重算後」的 nx，所有統計由事件推導
       return recomputeAllStatsFromEvents(nx);
