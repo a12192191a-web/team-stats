@@ -7,6 +7,7 @@ const LS_BACKUP  = "rsbm.autosave.backup";
 const SS_ONCE    = "rsbm.forceReload.once";
 const LS_TEMPLATES = "rsbm.lineup.templates.v1";
 const FORCE_RELOAD_ON_ENTER = false;
+const ENABLE_BUILD_CHECK = true;
 
 function getBuildIdFromHtml(html: string): string | null {
   const m = html.match(/"buildId"\s*:\s*"([A-Za-z0-9\-_.]+)"/);
@@ -14,8 +15,10 @@ function getBuildIdFromHtml(html: string): string | null {
 }
 
 function useHotUpdateWithAutosave(players: any, games: any) {
-  const latest = useRef<{ players: any; games: any }>({ players, games });
-  useEffect(() => { latest.current = { players, games }; }, [players, games]);
+  const latestState = useRef<{ players: any; games: any }>({ players, games });
+  useEffect(() => { latestState.current = { players, games };     return () => { /* appended above */ };
+  }, []);
+
   // A) 直進系統就刷新（每個分頁只做一次，避免死循環）
   // 已關閉以避免進入「比賽紀錄」時閃爍
   useEffect(() => {
@@ -34,6 +37,7 @@ function useHotUpdateWithAutosave(players: any, games: any) {
     const currentId = (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
 
     const check = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       try {
         const res = await fetch("/", { cache: "no-store" });
         const html = await res.text();
@@ -42,10 +46,10 @@ function useHotUpdateWithAutosave(players: any, games: any) {
         if (currentId && latestId && latestId !== currentId) {
           // 先本端存檔
           try {
-            const { players: p, games: g } = latest.current;
+            const { players: p, games: g } = latestState.current;
             localStorage.setItem(LS_PLAYERS, JSON.stringify(p));
-            localStorage.setItem(LS_GAMES,   JSON.stringify(g));
-            localStorage.setItem(LS_BACKUP,  JSON.stringify({ ts: Date.now(), players: p, games: g }));
+                        localStorage.setItem(LS_GAMES,   JSON.stringify(g));
+                        localStorage.setItem(LS_BACKUP,  JSON.stringify({ ts: Date.now(), players: p, games: g }));
           } catch {}
 
           // 再自動刷新頁面
@@ -61,7 +65,7 @@ function useHotUpdateWithAutosave(players: any, games: any) {
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVis);
     // 首次也檢查一次（避免等一分鐘）
-    setTimeout(check, 5000);
+    const first = setTimeout(check, 5000);
 
     return () => {
       alive = false;
@@ -69,7 +73,8 @@ function useHotUpdateWithAutosave(players: any, games: any) {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [players, games]);
+      return () => { /* appended above */ };
+  }, []);
 }
 
 
