@@ -14,8 +14,8 @@ function getBuildIdFromHtml(html: string): string | null {
 }
 
 function useHotUpdateWithAutosave(players: any, games: any) {
-  // A) 直進系統就刷新（每個分頁只做一次，避免死循環）
-  // 已關閉以避免進入「比賽紀錄」時閃爍
+  const latest = useRef({ players, games });
+ useEffect(() => { latest.current = { players, games }; }, [players, games]);
   useEffect(() => {
     if (!FORCE_RELOAD_ON_ENTER) return;
     try {
@@ -26,26 +26,23 @@ function useHotUpdateWithAutosave(players: any, games: any) {
     } catch {}
   }, []);
 
-  // B) 使用中若發現有新版本：先存，再刷新
   useEffect(() => {
     let alive = true;
     const currentId = (typeof window !== "undefined" && (window as any).__NEXT_DATA__?.buildId) || null;
 
     const check = async () => {
       try {
-        const res = await fetch(`/__?__build_check=${Date.now()}`, { cache: "no-store" });
+        const res = await fetch("/", { cache: "no-store" });
         const html = await res.text();
         const latest = getBuildIdFromHtml(html);
         if (!alive) return;
         if (currentId && latest && latest !== currentId) {
-          // 先本端存檔
           try {
-            localStorage.setItem(LS_PLAYERS, JSON.stringify(players));
-            localStorage.setItem(LS_GAMES,   JSON.stringify(games));
-            localStorage.setItem(LS_BACKUP,  JSON.stringify({ ts: Date.now(), players, games }));
+           const { players: p, games: g } = latest.current;
+           localStorage.setItem(LS_PLAYERS, JSON.stringify(p));
+           localStorage.setItem(LS_GAMES,   JSON.stringify(g));
+           localStorage.setItem(LS_BACKUP,  JSON.stringify({ ts: Date.now(), players: p, games: g }));
           } catch {}
-
-          // 再自動刷新頁面
          alert("有新版本，請手動重新整理頁面");
         }
       } catch {}
@@ -66,7 +63,7 @@ function useHotUpdateWithAutosave(players: any, games: any) {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [players, games]);
+}, []);
 }
 
 
@@ -578,7 +575,7 @@ useFloatingCheckUpdateButton(hardRefresh);
   const [ipDraft, setIpDraft] = useState<Record<string, string>>({});
   const [cloudTS, setCloudTS] = useState<string | null>(null);
   const lastSaveAtRef = useRef(0); 
- useHotUpdateWithAutosave(players, games);
+ // useHotUpdateWithAutosave(players, games); // 暫停版本檢查
   useEffect(() => {
     setMounted(true);
     if (typeof window === "undefined") return;
