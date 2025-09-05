@@ -108,7 +108,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     curPA && curPA.result === null ? countFromPitches(curPA.pitches) : { balls: 0, strikes: 0 };
 
   // 投手選單（先挑打線裡有 P 的）
-  const pitcherOptions = (() => {
+const pitcherOptions: number[] = (() => {
     const list = (g.lineup || []).filter((pid: number) =>
       (getNameAndPositions(g, pid).positions || []).includes("P")
     );
@@ -273,7 +273,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
           <div className="text-sm">投手：</div>
           <select className="text-sm border rounded px-2 py-1" value={curHalf.pitcherId || 0} onChange={(e) => setPitcher(Number(e.target.value))}>
             <option value={0}>（選擇投手）</option>
-            {pitcherOptions.map((pid) => <option key={pid} value={pid}>{nameOf(pid)}</option>)}
+           {pitcherOptions.map((pid: number) => <option key={pid} value={pid}>{nameOf(pid)}</option>)}
           </select>
           {curPitcherName && <span className="text-xs text-slate-600">目前：{curPitcherName}</span>}
         </div>
