@@ -269,7 +269,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
       const nx: any = structuredClone(ggx);
       ensureInningsEvents(nx, inningIdx);
       const half = getCurHalf(nx);
-
+(nx as any).lastEditedStep = step;
       // 防守半局需先選投手
       if (!offense && !half.pitcherId) { missingPitcher = true; return nx; }
 
@@ -346,12 +346,14 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
   const commitResult = (res: PAResult) => {
     let turnNextHalf = false;
 
+
     setGames(prev => prev.map((ggx: any) => {
       if (ggx.id !== g.id) return ggx;
       const nx: any = structuredClone(ggx);
       ensureInningsEvents(nx, inningIdx);
       const half = getCurHalf(nx);
       if (!offense && !half.pitcherId) return nx;
+(nx as any).lastEditedStep = step;
 
       // 取/建當前打席
       let pa = half.pas[half.pas.length - 1] as PlateAppearance | undefined;

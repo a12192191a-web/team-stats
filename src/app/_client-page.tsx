@@ -574,6 +574,127 @@ function calcStats(batting: Batting, pitching: Pitching, fielding: Fielding, bas
            R: toNonNegNum(batting.R), RBI: toNonNegNum(batting.RBI), SH: toNonNegNum(batting.SH),
            SB, CS, SBP, BB9, H9, KBB, OBA, PC };
 }
+// === Cloud helpers (toCloud / fromCloud / revive / recompute) ===
+type PitchMark = "S"|"B"|"F";
+type PAResult = "1B"|"2B"|"3B"|"HR"|"BB"|"IBB"|"HBP"|"SO"|"GO"|"FO"|"SF"|"SH"|"DP"|"TP"|"CS"|"E"|"FC";
+type BaseState = [boolean, boolean, boolean];
+
+const cloud_emptyTriple = () => ({
+  batting: { "1B":0,"2B":0,"3B":0, HR:0, BB:0, SO:0, HBP:0, SF:0, SH:0, GO:0, FO:0, R:0, RBI:0 },
+  pitching:{ IP:0, H:0, ER:0, BB:0, K:0, HR:0, AB:0, PC:0 },
+  fielding:{ PO:0, A:0, E:0 },
+  baserunning:{ SB:0, CS:0 },
+});
+
+// 存到雲端前轉乾淨：避免漏掉 inningsEvents / mode / lastEditedStep
+function cloud_toCloudGame(g: any) {
+  return {
+    id: g.id,
+    name: g.name ?? "",
+    date: g.date ?? "",
+    mode: g.mode ?? "classic",
+    startDefense: !!g.startDefense,
+    lineup: Array.isArray(g.lineup) ? g.lineup : [],
+    nextBatterIdxTop: g.nextBatterIdxTop ?? 0,
+    nextBatterIdxBot: g.nextBatterIdxBot ?? 0,
+    lastEditedStep: typeof g.lastEditedStep === "number" ? g.lastEditedStep : undefined,
+    inningsEvents: Array.isArray(g.inningsEvents) ? g.inningsEvents : [],
+    stats: g.stats ?? {}, // 可存可不存；載入會被事件重算覆蓋
+  };
+}
+
+// 復原 helpers
+function cloud_revivePA(p:any){
+  const pick = (x:any): x is PitchMark => x==="B"||x==="S"||x==="F";
+  const b3 = (a:any):BaseState => [!!a?.[0], !!a?.[1], !!a?.[2]];
+  return {
+    batterId: Number(p?.batterId)||0,
+    pitcherId: Number(p?.pitcherId)||0,
+    pitches: Array.isArray(p?.pitches) ? p.pitches.filter(pick) : [],
+    result: (p?.result ?? null) as PAResult|null,
+    outsAdded: Math.max(0, Math.min(3, Number(p?.outsAdded)||0)) as 0|1|2|3,
+    rbi: typeof p?.rbi==="number" ? p.rbi : undefined,
+    er:  typeof p?.er ==="number" ? p.er  : undefined,
+    ts:  typeof p?.ts==="number" ? p.ts  : Date.now(),
+    baseBefore: p?.baseBefore ? b3(p.baseBefore) : undefined,
+    baseAfter:  p?.baseAfter  ? b3(p.baseAfter ) : undefined,
+    runs: Number(p?.runs)||0,
+    earnedRuns: Number(p?.earnedRuns)||0,
+    hasError: !!p?.hasError,
+  };
+}
+function cloud_reviveHalf(h:any){
+  return {
+    outs: Math.max(0, Math.min(3, Number(h?.outs)||0)) as 0|1|2|3,
+    pitcherId: h?.pitcherId ? Number(h.pitcherId) : undefined,
+    pas: Array.isArray(h?.pas) ? h.pas.map(cloud_revivePA) : [],
+    bases: [!!h?.bases?.[0], !!h?.bases?.[1], !!h?.bases?.[2]] as BaseState,
+  };
+}
+function cloud_reviveInningsEvents(raw:any){
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map(x => ({ top: cloud_reviveHalf(x?.top || {}), bot: cloud_reviveHalf(x?.bot || {}) }));
+}
+
+// 用 events 重算 stats（簡版，與面板規則一致）
+function cloud_recomputeStatsFromEvents(g:any){
+  const stats: Record<number, ReturnType<typeof cloud_emptyTriple>> = {};
+  const addB = (pid:number,k:keyof ReturnType<typeof cloud_emptyTriple>["batting"],v=1)=>{ (stats[pid] ||= cloud_emptyTriple()).batting[k] = ((stats[pid].batting as any)[k]||0)+v; };
+  const addP = (pid:number,k:keyof ReturnType<typeof cloud_emptyTriple>["pitching"],v=1)=>{ (stats[pid] ||= cloud_emptyTriple()).pitching[k] = ((stats[pid].pitching as any)[k]||0)+v; };
+  const isAB = (r:PAResult)=>!["BB","IBB","HBP","SF","SH"].includes(r);
+
+  for (const inn of (g.inningsEvents||[])) {
+    for (const hk of ["top","bot"] as const) {
+      const half = (inn as any)[hk]; if (!half) continue;
+      const pit = half.pitcherId;
+      if (pit) for (const pa of (half.pas||[])) for (const m of (pa.pitches||[]))
+        if (m==="B"||m==="S"||m==="F") addP(pit,"PC",1);
+
+      for (const pa of (half.pas||[])) {
+        const r = pa.result as PAResult|undefined; if (!r) continue;
+        const b = pa.batterId || 0;
+        if (b) {
+          if (["1B","2B","3B","HR"].includes(r)) addB(b, r as any);
+          if (r==="BB"||r==="IBB") addB(b,"BB");
+          if (r==="HBP") addB(b,"HBP");
+          if (r==="SO") addB(b,"SO");
+          if (r==="GO") addB(b,"GO");
+          if (r==="FO") addB(b,"FO");
+          if (r==="SF") addB(b,"SF");
+          if (r==="SH") addB(b,"SH");
+          const flaggedError = !!pa.hasError;
+          const runs = Number(pa.runs)||0;
+          const rbi = typeof pa.rbi==="number" ? pa.rbi
+                    : (runs && !flaggedError && !["DP","TP","CS","SO"].includes(r) ? runs : 0);
+          if (rbi) addB(b,"RBI",rbi);
+        }
+        if (pit) {
+          if (["1B","2B","3B","HR"].includes(r)) addP(pit,"H");
+          if (r==="HR") addP(pit,"HR");
+          if (r==="BB"||r==="IBB") addP(pit,"BB");
+          if (r==="SO") addP(pit,"K");
+          if (isAB(r)) addP(pit,"AB");
+          if (pa.outsAdded) addP(pit,"IP", pa.outsAdded/3);
+          const er = typeof pa.er==="number" ? pa.er : (Number(pa.earnedRuns)||0);
+          if (er) addP(pit,"ER",er);
+        }
+      }
+    }
+  }
+  return { ...g, stats };
+}
+
+// 下載雲端後「復原 + 重算」
+function cloud_fromCloudGame(doc:any){
+  const g = { ...doc };
+  g.mode = g.mode || "classic";
+  g.inningsEvents = cloud_reviveInningsEvents(g.inningsEvents);
+  g.lineup = Array.isArray(g.lineup) ? g.lineup : [];
+  g.nextBatterIdxTop = g.nextBatterIdxTop ?? 0;
+  g.nextBatterIdxBot = g.nextBatterIdxBot ?? 0;
+  g.lastEditedStep = typeof g.lastEditedStep==="number" ? g.lastEditedStep : undefined;
+  return cloud_recomputeStatsFromEvents(g);
+}
 
 /* =========================================================
    主頁
@@ -662,7 +783,7 @@ const pidToName = (g: Game, pid?: number) => {
     }
     const payload = data?.data ?? {};
     setPlayers(revivePlayers(payload.players ?? []));
-    setGames(reviveGames(payload.games ?? []));
+  setGames(Array.isArray(payload.games) ? payload.games.map(cloud_fromCloudGame) : []);
     setCompare(Array.isArray(payload.compare) ? payload.compare.map((x: any) => Number(x)).filter(Number.isFinite) : []);
     setCloudTS(data?.updated_at ?? null);
     alert("已從雲端載入。");
@@ -682,7 +803,8 @@ const pidToName = (g: Game, pid?: number) => {
       if (!ok) return;
     }
 
-    const payload = { players, games, compare, v: 3, savedAt: new Date().toISOString() };
+   const payload = { players, games: games.map(cloud_toCloudGame), compare, v: 3, savedAt: new Date().toISOString() };
+
     const { data, error } = await supabase
       .from("app_state")
       .upsert({ id: "default", data: payload, updated_at: new Date().toISOString() })
