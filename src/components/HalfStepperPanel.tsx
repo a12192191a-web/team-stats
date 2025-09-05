@@ -148,7 +148,7 @@ export default function HalfStepperPanel({ g, players, setGames }: Props) {
     return { bases: [r1, r2, r3], runs };
   }
   function applyPlan(b: BaseState, plan?: AdvancePlan): { bases: BaseState; runs: number } {
-    let runs = 0; let bases = cloneBases(b);
+   let runs = 0; const bases = cloneBases(b);
     const step = (from: 1|2|3, adv: number) => {
       if (!adv) return;
       if (!bases[from-1]) return;
