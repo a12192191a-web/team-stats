@@ -210,6 +210,9 @@ type Game = {
   mode?: GameMode;         // 記錄方式：classic=傳統、inning=逐局
   subs?: { inning: number; posIndex: number; outPid: number; inPid: number }[];
   defense?: DefenseGrid;
+  lastEditedStep?: number;
+  inningsEvents?: InningEvent[]; // 檔案裡已經有 InningEvent 型別
+
 };
 // ---- 事件流：逐球 / 打席結果（不動舊資料）----
 
